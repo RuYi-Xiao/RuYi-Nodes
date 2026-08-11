@@ -1,0 +1,62 @@
+{
+  "RuYiMultiLoraLoader": {
+    "display_name": "RuYi multi-Lora-loader",
+    "description": "Load multiple LoRAs with independent model and CLIP strengths, with LoRA Manager metadata integration.",
+    "inputs": {
+      "model": {
+        "name": "Model"
+      },
+      "clip": {
+        "name": "CLIP"
+      },
+      "stack_config": {
+        "name": "LoRA Stack"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Model"
+      },
+      "1": {
+        "name": "CLIP"
+      },
+      "2": {
+        "name": "Trigger Words"
+      }
+    }
+  },
+  "RuYiMultiLoraLoaderModelOnly": {
+    "display_name": "RuYi multi-Lora-loader (model only)",
+    "description": "Load multiple LoRAs into the model only, with LoRA Manager metadata integration.",
+    "inputs": {
+      "model": {
+        "name": "Model"
+      },
+      "stack_config": {
+        "name": "LoRA Stack"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "Model"
+      },
+      "1": {
+        "name": "Trigger Words"
+      }
+    }
+  },
+  "RuYiTextPreview": {
+    "display_name": "RuYi text-preview",
+    "description": "Monitor a STRING after execution and pass it through unchanged.",
+    "inputs": {
+      "text": {
+        "name": "Text"
+      }
+    },
+    "outputs": {
+      "0": {
+        "name": "STRING"
+      }
+    }
+  }
+}

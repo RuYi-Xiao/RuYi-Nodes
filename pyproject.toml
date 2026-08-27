@@ -1,6 +1,6 @@
 [project]
 name = "ruyi-nodes"
-version = "0.1.18"
+version = "0.1.19"
 description = "Lightweight ComfyUI custom nodes for multi-LoRA workflows, image comparison, image saving, and STRING preview."
 readme = "README.md"
 requires-python = ">=3.10"

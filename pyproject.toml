@@ -13,5 +13,6 @@ Repository = "https://github.com/RuYi-Xiao/RuYi-Nodes"
 Issues = "https://github.com/RuYi-Xiao/RuYi-Nodes/issues"
 Changelog = "https://github.com/RuYi-Xiao/RuYi-Nodes/blob/main/CHANGELOG.md"
 
-[tool.ruyi_nodes]
-display_name = "RuYi-Nodes"
+[tool.comfy]
+PublisherId = "ruyi-xiao"
+DisplayName = "RuYi-Nodes"

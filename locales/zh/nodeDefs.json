@@ -1,6 +1,6 @@
 {
   "RuYiMultiLoraLoader": {
-    "display_name": "RuYi multi-Lora-loader",
+    "display_name": "RuYi 多 LoRA 加载器",
     "description": "多 LoRA 加载器，分别控制模型与 CLIP 权重，并读取 LoRA Manager 资料。",
     "inputs": {
       "model": {
@@ -26,7 +26,7 @@
     }
   },
   "RuYiMultiLoraLoaderModelOnly": {
-    "display_name": "RuYi multi-Lora-loader（仅模型）",
+    "display_name": "RuYi 多 LoRA 加载器（仅模型）",
     "description": "仅作用于模型的多 LoRA 加载器，并读取 LoRA Manager 资料。",
     "inputs": {
       "model": {
@@ -58,5 +58,9 @@
         "name": "STRING"
       }
     }
+  },
+  "RuYiImageCompare": {
+    "display_name": "RuYi 图像对比",
+    "description": "从多个动态图像输入中自由选择任意两张图像，并使用滑动对比或点击切换模式进行比较。"
   }
 }

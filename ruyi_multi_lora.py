@@ -18,7 +18,7 @@ from server import PromptServer
 import nodes
 
 
-VERSION = "0.1.17"
+VERSION = "0.1.18"
 CATEGORY = "RuYi-Nodes/loaders"
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".avif", ".bmp"}
 

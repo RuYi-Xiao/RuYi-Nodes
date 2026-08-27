@@ -3,6 +3,7 @@ name = "ruyi-nodes"
 version = "0.1.19"
 description = "Lightweight ComfyUI custom nodes for multi-LoRA workflows, image comparison, image saving, and STRING preview."
 readme = "README.md"
+license = { file = "LICENSE" }
 requires-python = ">=3.10"
 dependencies = []
 keywords = ["comfyui", "lora", "image-compare", "image-saving", "custom-nodes", "krea2", "flux"]

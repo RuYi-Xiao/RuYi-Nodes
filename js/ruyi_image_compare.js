@@ -3,12 +3,14 @@ import { api } from "../../scripts/api.js";
 
 const NODE_NAME = "RuYiImageCompare";
 const STATE_KEY = "ruyi_image_compare";
+const LAST_ITEMS_KEY = "ruyi_image_compare_last_items";
 const SAVE_MANIFEST_WIDGET = "save_manifest";
 const OUTPUT_SUBFOLDER = "RuYi-Compare";
 const DEFAULT_TEMPLATE = "%save_name%";
 const DEFAULT_SAVE_NAME_TEMPLATE = "%display_name-date:yyyy-MM-dd_HHmmss%";
 const MAX_FULL_CACHE = 2;
 const MAX_LABEL_LENGTH = 64;
+const MAX_PERSISTED_ITEMS = 128;
 
 const I18N = {
     en: {
@@ -137,6 +139,45 @@ function saveState(node, state, dirty = true) {
     syncManifestWidget(node, node.properties[STATE_KEY]);
     if (dirty) { try { node.graph?.change?.(); } catch {} }
     node.setDirtyCanvas?.(true, true);
+}
+
+function cloneViewInfo(info) {
+    if (!info || typeof info !== "object" || !info.filename) return null;
+    return {
+        filename: String(info.filename),
+        subfolder: String(info.subfolder || ""),
+        type: String(info.type || "temp"),
+    };
+}
+
+function normalizePersistedCompareItems(items) {
+    if (!Array.isArray(items)) return [];
+    return items.slice(0, MAX_PERSISTED_ITEMS).map((item) => {
+        const preview = cloneViewInfo(item?.preview);
+        const thumb = cloneViewInfo(item?.thumb);
+        if (!item?.key || !preview || !thumb) return null;
+        return {
+            key: String(item.key),
+            input: Number(item.input) || 0,
+            frame: Number(item.frame) || 0,
+            frame_count: Math.max(1, Number(item.frame_count) || 1),
+            width: Math.max(0, Number(item.width) || 0),
+            height: Math.max(0, Number(item.height) || 0),
+            size_bytes: Math.max(0, Number(item.size_bytes) || 0),
+            content_id: item.content_id == null ? null : String(item.content_id),
+            preview,
+            thumb,
+        };
+    }).filter(Boolean);
+}
+
+function persistCompareItems(node, items) {
+    node.properties ||= {};
+    node.properties[LAST_ITEMS_KEY] = normalizePersistedCompareItems(items);
+}
+
+function getPersistedCompareItems(node) {
+    return normalizePersistedCompareItems(node?.properties?.[LAST_ITEMS_KEY]);
 }
 
 function itemCounts(items) { const m = new Map(); for (const item of items) m.set(item.input, (m.get(item.input) || 0) + 1); return m; }
@@ -405,9 +446,9 @@ function makeCompareWidget(node) {
     bSelect.addEventListener("change", () => { widget.state.bKey = bSelect.value; if (widget.items.length > 1 && widget.state.bKey === widget.state.aKey) { const firstOther = widget.items.find((it) => it.key !== widget.state.bKey); widget.state.aKey = firstOther?.key || widget.state.aKey; } saveState(node, widget.state); refreshAll(); });
     modeButton.addEventListener("click", (e) => { e.preventDefault(); widget.state.mode = widget.state.mode === "wipe" ? "toggle" : "wipe"; saveState(node, widget.state); updateTopControls(); renderPreview(); });
 
-    widget.setItems = (items, autosaved = []) => {
+    widget.setItems = (items, autosaved = [], { persist = true } = {}) => {
         clearFullCache();
-        const nextItems = Array.isArray(items) ? items.filter((it) => it?.key) : [];
+        const nextItems = normalizePersistedCompareItems(items);
         const nextContentIds = new Map(nextItems.map((item) => [item.key, item.content_id || null]));
         for (const [key, oldContentId] of widget.itemContentIds.entries()) {
             const newContentId = nextContentIds.get(key);
@@ -417,6 +458,7 @@ function makeCompareWidget(node) {
         }
         widget.itemContentIds = nextContentIds;
         widget.items = nextItems;
+        if (persist) persistCompareItems(node, nextItems);
         if (Array.isArray(autosaved)) {
             for (const saved of autosaved) {
                 if (!saved?.key) continue;
@@ -427,6 +469,17 @@ function makeCompareWidget(node) {
         selectResolved(widget.items, widget.state); saveState(node, widget.state, false); refreshAll();
     };
     widget.restoreState = () => { widget.state = getState(node); selectResolved(widget.items, widget.state); syncManifestWidget(node, widget.state); refreshAll(); };
+    widget.restoreAfterWorkflowSwitch = () => {
+        widget.state = getState(node);
+        const persisted = getPersistedCompareItems(node);
+        if (!widget.items.length && persisted.length) {
+            widget.setItems(persisted, [], { persist: false });
+            return;
+        }
+        selectResolved(widget.items, widget.state);
+        syncManifestWidget(node, widget.state);
+        refreshAll();
+    };
     widget.onRemoved = () => { clearFullCache(); };
     refreshAll(); syncManifestWidget(node, widget.state); return widget;
 }
@@ -439,16 +492,27 @@ app.registerExtension({
         nodeType.prototype.onNodeCreated = function () {
             originalCreated?.apply(this, arguments);
             this.properties ||= {}; this.properties[STATE_KEY] = { ...defaultState(), ...(this.properties[STATE_KEY] || {}) };
-            hideManifestWidget(this); this.ruyiCompareItems = []; this.ruyiCompareWidget = makeCompareWidget(this);
+            hideManifestWidget(this);
+            this.ruyiCompareItems = getPersistedCompareItems(this);
+            this.ruyiCompareWidget = makeCompareWidget(this);
+            if (this.ruyiCompareItems.length) this.ruyiCompareWidget?.setItems?.(this.ruyiCompareItems, [], { persist: false });
             const width = Math.max(Number(this.size?.[0]) || 0, 720); const height = Math.max(Number(this.size?.[1]) || 0, 790); this.setSize?.([width, height]); this.setDirtyCanvas?.(true, true);
         };
         const originalConfigure = nodeType.prototype.onConfigure;
-        nodeType.prototype.onConfigure = function (data) { const result = originalConfigure?.apply(this, arguments); setTimeout(() => { hideManifestWidget(this); this.ruyiCompareWidget?.restoreState?.(); }, 0); return result; };
+        nodeType.prototype.onConfigure = function (data) { const result = originalConfigure?.apply(this, arguments); setTimeout(() => { hideManifestWidget(this); this.ruyiCompareWidget?.restoreAfterWorkflowSwitch?.(); }, 0); return result; };
         const originalSerialize = nodeType.prototype.onSerialize;
-        nodeType.prototype.onSerialize = function (data) { originalSerialize?.apply(this, arguments); data.properties ||= {}; const state = this.ruyiCompareWidget?.state || getState(this); data.properties[STATE_KEY] = { ...state, displayNames: { ...state.displayNames }, saveNames: { ...state.saveNames }, autoSaveKeys: { ...state.autoSaveKeys } }; syncManifestWidget(this, state); };
+        nodeType.prototype.onSerialize = function (data) { originalSerialize?.apply(this, arguments); data.properties ||= {}; const state = this.ruyiCompareWidget?.state || getState(this); data.properties[STATE_KEY] = { ...state, displayNames: { ...state.displayNames }, saveNames: { ...state.saveNames }, autoSaveKeys: { ...state.autoSaveKeys } }; data.properties[LAST_ITEMS_KEY] = normalizePersistedCompareItems(this.ruyiCompareWidget?.items || this.ruyiCompareItems || []); syncManifestWidget(this, state); };
         const originalExecuted = nodeType.prototype.onExecuted;
         nodeType.prototype.onExecuted = function (data) { originalExecuted?.apply(this, arguments); this.imgs = null; this.ruyiCompareItems = Array.isArray(data?.compare_items) ? data.compare_items : []; this.ruyiCompareWidget?.setItems?.(this.ruyiCompareItems, Array.isArray(data?.autosaved) ? data.autosaved : []); this.setDirtyCanvas?.(true, true); };
         const originalRemoved = nodeType.prototype.onRemoved;
         nodeType.prototype.onRemoved = function () { this.ruyiCompareWidget?.onRemoved?.(); originalRemoved?.apply(this, arguments); };
+    },
+    afterConfigureGraph() {
+        requestAnimationFrame(() => {
+            for (const node of app.graph?._nodes || []) {
+                if (node?.comfyClass !== NODE_NAME && node?.type !== NODE_NAME) continue;
+                node.ruyiCompareWidget?.restoreAfterWorkflowSwitch?.();
+            }
+        });
     },
 });

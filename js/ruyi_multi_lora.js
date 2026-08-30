@@ -1184,6 +1184,8 @@ function createRuYiLoraWidget(node, inputName) {
     let layoutMeasureToken = 0;
     let disposed = false;
     let surfaceResizeObserver = null;
+    let remountObserver = null;
+    let restoreRenderQueued = false;
     let cardResizeObserver = null;
     let cardResizeRaf = 0;
     const getHeight = () => measuredPanelHeight;
@@ -1359,6 +1361,37 @@ function createRuYiLoraWidget(node, inputName) {
         });
         surfaceResizeObserver.observe(surface);
     }
+
+    const queueRestoreRender = () => {
+        if (disposed || restoreRenderQueued) return;
+        restoreRenderQueued = true;
+        queueMicrotask(() => {
+            restoreRenderQueued = false;
+            if (disposed) return;
+            render({ fitMode: "restore" }).catch(() => {});
+        });
+    };
+
+    const scheduleRenderOnRemount = () => {
+        if (disposed) return;
+        if (panel.isConnected) {
+            queueRestoreRender();
+            return;
+        }
+        if (remountObserver || typeof MutationObserver === "undefined") return;
+        remountObserver = new MutationObserver(() => {
+            if (disposed) {
+                remountObserver?.disconnect();
+                remountObserver = null;
+                return;
+            }
+            if (!panel.isConnected) return;
+            remountObserver.disconnect();
+            remountObserver = null;
+            queueRestoreRender();
+        });
+        remountObserver.observe(document.documentElement || document.body, { childList: true, subtree: true });
+    };
 
     const persist = () => {
         if (!widget) return;
@@ -1547,7 +1580,11 @@ function createRuYiLoraWidget(node, inputName) {
 
             if (row.lora) {
                 getMetadata(row.lora).then(meta => {
-                    if (!card.isConnected || serial !== renderSerial) return;
+                    if (serial !== renderSerial) return;
+                    if (!card.isConnected) {
+                        scheduleRenderOnRemount();
+                        return;
+                    }
                     const friendlyName = meta?.model_name || friendlyFallback(row.lora);
                     selectTitle.textContent = friendlyName;
                     selectBtn.title = `${friendlyName}\n${row.lora}`;
@@ -1617,7 +1654,11 @@ function createRuYiLoraWidget(node, inputName) {
                             preview_mtime: meta.preview_mtime || 0,
                         };
                         setCachedThumbnail(img, thumbItem, 128, 160, 70).then(ok => {
-                            if (!ok && img.isConnected) img.replaceWith(make("div", "ruyi-preview placeholder", tr("noPreview")));
+                            if (!img.isConnected) {
+                                scheduleRenderOnRemount();
+                                return;
+                            }
+                            if (!ok) img.replaceWith(make("div", "ruyi-preview placeholder", tr("noPreview")));
                         });
                     }
                 });
@@ -1675,6 +1716,11 @@ function createRuYiLoraWidget(node, inputName) {
 
     widget.serialize = true;
     widget.value = "[]";
+    widget.refreshAfterWorkflowRestore = () => {
+        if (disposed) return;
+        if (panel.isConnected) queueRestoreRender();
+        else scheduleRenderOnRemount();
+    };
 
     visibleCountInput.onchange = () => {
         let value = Math.trunc(Number(visibleCountInput.value));
@@ -1735,6 +1781,8 @@ function createRuYiLoraWidget(node, inputName) {
     widget.onRemove = () => {
         disposed = true;
         layoutMeasureToken++;
+        remountObserver?.disconnect();
+        remountObserver = null;
         surfaceResizeObserver?.disconnect();
         cardResizeObserver?.disconnect();
         if (cardResizeRaf) cancelAnimationFrame(cardResizeRaf);
@@ -1754,6 +1802,17 @@ app.registerExtension({
                 return createRuYiLoraWidget(node, inputName);
             },
         };
+    },
+
+    afterConfigureGraph() {
+        requestAnimationFrame(() => {
+            for (const node of app.graph?._nodes || []) {
+                if (!RUYI_NODE_NAMES.has(node?.comfyClass) && !RUYI_NODE_NAMES.has(node?.type)) continue;
+                for (const candidate of node.widgets || []) {
+                    candidate?.refreshAfterWorkflowRestore?.();
+                }
+            }
+        });
     },
 
     nodeCreated(node) {

@@ -13,10 +13,12 @@ from typing import Any
 import numpy as np
 import torch
 from PIL import Image
+from PIL.PngImagePlugin import PngInfo
 from aiohttp import web
 
 import folder_paths
 from comfy_api.latest import io
+from comfy.cli_args import args
 from server import PromptServer
 
 
@@ -30,6 +32,7 @@ DEFAULT_FILENAME_TEMPLATE = "%save_name%"
 DEFAULT_SAVE_NAME_TEMPLATE = "%display_name-date:yyyy-MM-dd_HHmmss%"
 _IMAGE_KEY_RE = re.compile(r"^image_(\d+)$")
 _TEMP_FILES_BY_NODE: dict[str, list[Path]] = {}
+
 _TEMP_FILES_LOCK = threading.Lock()
 _SAVE_LOCK = threading.Lock()
 _SAFE_NAME_RE = re.compile(r"[\\/:*?\"<>|\r\n\t]+")
@@ -75,7 +78,28 @@ def _image_content_id(image: Image.Image) -> str:
     return digest.hexdigest()
 
 
-def _save_frame_files(image: Image.Image, run_id: str, input_no: int, frame_no: int) -> tuple[dict[str, str], dict[str, str], int]:
+
+
+def _create_png_metadata(node_cls: type) -> PngInfo | None:
+    if args.disable_metadata:
+        return None
+    hidden = getattr(node_cls, "hidden", None)
+    if hidden is None:
+        return None
+    prompt = getattr(hidden, "prompt", None)
+    extra_pnginfo = getattr(hidden, "extra_pnginfo", None)
+    if prompt is None and not extra_pnginfo:
+        return None
+    metadata = PngInfo()
+    if prompt is not None:
+        metadata.add_text("prompt", json.dumps(prompt))
+    if isinstance(extra_pnginfo, dict):
+        for key, value in extra_pnginfo.items():
+            metadata.add_text(str(key), json.dumps(value))
+    return metadata
+
+
+def _save_frame_files(image: Image.Image, run_id: str, input_no: int, frame_no: int, pnginfo: PngInfo | None = None) -> tuple[dict[str, str], dict[str, str], int]:
     temp_root = Path(folder_paths.get_temp_directory())
     output_dir = temp_root / TEMP_SUBFOLDER
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -84,7 +108,7 @@ def _save_frame_files(image: Image.Image, run_id: str, input_no: int, frame_no: 
     thumb_name = stem + "_thumb.jpg"
     preview_path = output_dir / preview_name
     thumb_path = output_dir / thumb_name
-    image.save(preview_path, format="PNG", optimize=False)
+    image.save(preview_path, format="PNG", optimize=False, pnginfo=pnginfo)
     thumb = _jpeg_ready(image.copy())
     resampling = getattr(Image, "Resampling", Image)
     thumb.thumbnail((THUMB_MAX_SIDE, THUMB_MAX_SIDE), resample=resampling.LANCZOS)
@@ -107,16 +131,47 @@ def _sorted_autogrow_inputs(images: Any) -> list[tuple[int, torch.Tensor]]:
     return items
 
 
-def _node_id(node_cls: type) -> str:
+def _workflow_cleanup_key(node_cls: type) -> str:
     hidden = getattr(node_cls, "hidden", None)
-    value = getattr(hidden, "unique_id", None)
-    return str(value) if value is not None else "unknown"
+    node_id = getattr(hidden, "unique_id", None)
+    node_key = str(node_id) if node_id is not None else "unknown"
+
+    extra_pnginfo = getattr(hidden, "extra_pnginfo", None)
+    workflow_key = None
+    if isinstance(extra_pnginfo, dict):
+        workflow = extra_pnginfo.get("workflow")
+        if isinstance(workflow, dict):
+            workflow_id = workflow.get("id")
+            if workflow_id not in (None, ""):
+                workflow_key = f"workflow:{workflow_id}"
+            else:
+                try:
+                    canonical = json.dumps(workflow, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+                except Exception:
+                    canonical = ""
+                if canonical:
+                    workflow_key = "workflow-hash:" + hashlib.blake2b(canonical.encode("utf-8"), digest_size=12).hexdigest()
+
+    if workflow_key is None:
+        prompt = getattr(hidden, "prompt", None)
+        if prompt is not None:
+            try:
+                canonical_prompt = json.dumps(prompt, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+            except Exception:
+                canonical_prompt = ""
+            if canonical_prompt:
+                workflow_key = "prompt-hash:" + hashlib.blake2b(canonical_prompt.encode("utf-8"), digest_size=12).hexdigest()
+
+    if workflow_key is None:
+        workflow_key = "session"
+
+    return f"{workflow_key}|node:{node_key}"
 
 
-def _replace_temp_files(node_id: str, new_files: list[Path]) -> None:
+def _replace_temp_files(node_key: str, new_files: list[Path]) -> None:
     with _TEMP_FILES_LOCK:
-        old_files = _TEMP_FILES_BY_NODE.get(node_id, [])
-        _TEMP_FILES_BY_NODE[node_id] = new_files
+        old_files = _TEMP_FILES_BY_NODE.get(node_key, [])
+        _TEMP_FILES_BY_NODE[node_key] = new_files
     for path in old_files:
         try:
             path.unlink(missing_ok=True)
@@ -379,7 +434,7 @@ class RuYiImageCompare(io.ComfyNode):
             description="Compare any two images from a dynamically growing set of IMAGE inputs.",
             inputs=[io.Autogrow.Input("images", template=template), io.String.Input("save_manifest", default="{}")],
             outputs=[],
-            hidden=[io.Hidden.unique_id],
+            hidden=[io.Hidden.unique_id, io.Hidden.prompt, io.Hidden.extra_pnginfo],
             is_output_node=True,
         )
 
@@ -389,12 +444,13 @@ class RuYiImageCompare(io.ComfyNode):
         compare_items: list[dict[str, Any]] = []
         new_files: list[Path] = []
         temp_root = Path(folder_paths.get_temp_directory())
+        pnginfo = _create_png_metadata(cls)
         try:
             for input_no, tensor in _sorted_autogrow_inputs(images):
                 frames = _tensor_frames(tensor)
                 frame_count = len(frames)
                 for frame_no, image in enumerate(frames):
-                    preview, thumb, size_bytes = _save_frame_files(image, run_id, input_no, frame_no)
+                    preview, thumb, size_bytes = _save_frame_files(image, run_id, input_no, frame_no, pnginfo)
                     new_files.extend([temp_root / preview["subfolder"] / preview["filename"], temp_root / thumb["subfolder"] / thumb["filename"]])
                     compare_items.append({
                         "key": f"{input_no}:{frame_no}",
@@ -415,7 +471,7 @@ class RuYiImageCompare(io.ComfyNode):
                 except OSError:
                     pass
             raise
-        _replace_temp_files(_node_id(cls), new_files)
+        _replace_temp_files(_workflow_cleanup_key(cls), new_files)
         manifest = _parse_manifest(save_manifest)
         autosaved = _autosave_compare_items(compare_items, manifest)
         return io.NodeOutput(ui={"compare_items": compare_items, "autosaved": autosaved})

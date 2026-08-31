@@ -474,7 +474,7 @@ class RuYiImageCompare(io.ComfyNode):
         _replace_temp_files(_workflow_cleanup_key(cls), new_files)
         manifest = _parse_manifest(save_manifest)
         autosaved = _autosave_compare_items(compare_items, manifest)
-        return io.NodeOutput(ui={"compare_items": compare_items, "autosaved": autosaved})
+        return io.NodeOutput(ui={"images": [item["preview"] for item in compare_items], "compare_items": compare_items, "autosaved": autosaved})
 
 
 @PromptServer.instance.routes.post("/ruyi_nodes/image_compare/manual_save")

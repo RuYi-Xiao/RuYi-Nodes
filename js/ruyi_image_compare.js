@@ -32,6 +32,8 @@ const I18N = {
         frame: "Frame",
         autosavedCount: "Auto-saved",
         autoSaved: "Auto-saved",
+        saveAs: "Save as...",
+        copyImage: "Copy image",
         templateHelp: "RuYi variables:\nUser fields: %display_name%  %save_name%\nAuto-generated: %index%  %input%  %frame%  %date:yyyy-MM-dd_HHmmss%\nRelative folder example: Compare/%display_name-date:yyyy-MM-dd_HHmmss%\nAbsolute path example: C:\\YourFolder\\%display_name-date:yyyy-MM-dd_HHmmss%",
     },
     zh: {
@@ -53,6 +55,8 @@ const I18N = {
         frame: "帧",
         autosavedCount: "本次自动保存",
         autoSaved: "已自动保存",
+        saveAs: "另存为",
+        copyImage: "复制图片",
         templateHelp: "RuYi 可用变量：\n用户填写：%display_name%  %save_name%\n自动生成：%index%  %input%  %frame%  %date:yyyy-MM-dd_HHmmss%\n相对子目录示例：对比结果/%display_name-date:yyyy-MM-dd_HHmmss%\n绝对路径示例：C:\\YourFolder\\%display_name-date:yyyy-MM-dd_HHmmss%",
     },
 };
@@ -70,6 +74,128 @@ const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 function viewUrl(info) {
     if (!info?.filename) return "";
     return api.apiURL(`/view?filename=${encodeURIComponent(info.filename)}`) + `&subfolder=${encodeURIComponent(info.subfolder || "")}&type=${encodeURIComponent(info.type || "temp")}`;
+}
+
+function withoutNativeImagePreview(data) {
+    if (!data || typeof data !== "object" || !("images" in data)) return data;
+    const copy = { ...data };
+    delete copy.images;
+    return copy;
+}
+
+// ComfyUI stores executed `ui.images` in the reactive node-output store before
+// invoking the node's onExecuted hook. RuYi still emits `ui.images` from Python
+// so Jobs / Media Assets can index the files, but its canvas node uses the
+// custom A/B compare UI instead of ComfyUI's standard preview. Custom extension
+// modules are loaded before ComfyUI registers its core `executed` listener, so
+// removing `images` only from this client-side event payload prevents the
+// duplicate canvas preview without changing the backend history/output record.
+function suppressNativePreviewForRuYiExecutedEvent(event) {
+    const detail = event?.detail;
+    const output = detail?.output;
+    if (!Array.isArray(output?.compare_items)) return;
+    detail.output = withoutNativeImagePreview(output);
+}
+
+api.addEventListener("executed", suppressNativePreviewForRuYiExecutedEvent);
+
+let activeOriginalImageMenu = null;
+
+function closeOriginalImageContextMenu() {
+    if (!activeOriginalImageMenu) return;
+    try { activeOriginalImageMenu.remove(); } catch {}
+    activeOriginalImageMenu = null;
+}
+
+async function fetchOriginalImageBlob(item) {
+    const url = viewUrl(item?.preview);
+    if (!url) throw new Error("original-image-unavailable");
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`image-fetch-failed:${response.status}`);
+    return { blob: await response.blob(), url };
+}
+
+async function saveOriginalImageAs(item) {
+    const { blob, url } = await fetchOriginalImageBlob(item);
+    const suggestedName = String(item?.preview?.filename || `ruyi_compare_${item?.key || "image"}.png`);
+    if (typeof window.showSaveFilePicker === "function") {
+        const handle = await window.showSaveFilePicker({
+            suggestedName,
+            types: [{ description: "PNG image", accept: { "image/png": [".png"] } }],
+        });
+        const writable = await handle.createWritable();
+        await writable.write(blob);
+        await writable.close();
+        return;
+    }
+    const objectUrl = URL.createObjectURL(blob);
+    try {
+        const anchor = document.createElement("a");
+        anchor.href = objectUrl;
+        anchor.download = suggestedName;
+        anchor.rel = "noopener";
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+    } finally {
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+    }
+}
+
+async function copyOriginalImage(item) {
+    if (!navigator.clipboard?.write || typeof ClipboardItem === "undefined") throw new Error("clipboard-image-write-unavailable");
+    const { blob } = await fetchOriginalImageBlob(item);
+    let pngBlob = blob;
+    if (blob.type !== "image/png") {
+        const bitmap = await createImageBitmap(blob);
+        try {
+            const canvas = document.createElement("canvas");
+            canvas.width = bitmap.width;
+            canvas.height = bitmap.height;
+            const ctx = canvas.getContext("2d");
+            ctx?.drawImage(bitmap, 0, 0);
+            pngBlob = await new Promise((resolve, reject) => canvas.toBlob((value) => value ? resolve(value) : reject(new Error("png-conversion-failed")), "image/png"));
+        } finally {
+            bitmap.close?.();
+        }
+    }
+    await navigator.clipboard.write([new ClipboardItem({ "image/png": pngBlob })]);
+}
+
+function showOriginalImageContextMenu(item, clientX, clientY) {
+    closeOriginalImageContextMenu();
+    const menu = document.createElement("div");
+    activeOriginalImageMenu = menu;
+    Object.assign(menu.style, {
+        position: "fixed", left: `${clientX}px`, top: `${clientY}px`, zIndex: "2147483647",
+        minWidth: "150px", padding: "6px", borderRadius: "10px",
+        border: "1px solid var(--border-color, #444)", background: "var(--comfy-menu-bg, #181818)",
+        boxShadow: "0 8px 24px rgba(0,0,0,.35)", color: "var(--input-text, #eee)",
+        font: "14px/1.2 system-ui, -apple-system, Segoe UI, sans-serif",
+    });
+    const addAction = (label, action) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.textContent = label;
+        Object.assign(button.style, { width: "100%", padding: "10px 14px", border: "0", borderRadius: "7px", background: "transparent", color: "inherit", textAlign: "left", cursor: "pointer", font: "inherit" });
+        button.addEventListener("pointerenter", () => { button.style.background = "rgba(255,255,255,.09)"; });
+        button.addEventListener("pointerleave", () => { button.style.background = "transparent"; });
+        button.addEventListener("click", async (event) => {
+            event.preventDefault(); event.stopPropagation(); closeOriginalImageContextMenu();
+            try { await action(); } catch (error) { if (error?.name !== "AbortError") console.warn("RuYi image action failed", error); }
+        });
+        menu.appendChild(button);
+    };
+    addAction(tr("saveAs"), () => saveOriginalImageAs(item));
+    addAction(tr("copyImage"), () => copyOriginalImage(item));
+    document.body.appendChild(menu);
+    const rect = menu.getBoundingClientRect();
+    if (rect.right > window.innerWidth - 8) menu.style.left = `${Math.max(8, window.innerWidth - rect.width - 8)}px`;
+    if (rect.bottom > window.innerHeight - 8) menu.style.top = `${Math.max(8, window.innerHeight - rect.height - 8)}px`;
+    setTimeout(() => {
+        const dismiss = (event) => { if (!menu.contains(event.target)) { closeOriginalImageContextMenu(); document.removeEventListener("pointerdown", dismiss, true); } };
+        document.addEventListener("pointerdown", dismiss, true);
+    }, 0);
 }
 
 function formatBytes(bytes) {
@@ -357,6 +483,7 @@ function makeCompareWidget(node) {
             Object.assign(row.style, { display: "grid", gridTemplateColumns: "110px 1fr", gap: "10px", alignItems: "start", padding: "8px", border: `1px solid ${item.key === widget.state.aKey ? "#f2b84b" : item.key === widget.state.bKey ? "#58a6ff" : "#4a4a4a"}`, borderRadius: "6px", background: "#161616" });
             const thumbWrap = document.createElement("div"); Object.assign(thumbWrap.style, { position: "relative", width: "110px", height: "110px", background: "#0c0c0c", overflow: "hidden", borderRadius: "4px", border: "1px solid #333" });
             const thumb = document.createElement("img"); thumb.src = viewUrl(item.thumb); thumb.loading = "lazy"; thumb.decoding = "async"; Object.assign(thumb.style, { width: "100%", height: "100%", objectFit: "contain", display: "block" });
+            thumb.addEventListener("contextmenu", (event) => { event.preventDefault(); event.stopPropagation(); showOriginalImageContextMenu(item, event.clientX, event.clientY); });
             const badge = document.createElement("div"); badge.textContent = item.key === widget.state.aKey ? "A" : (item.key === widget.state.bKey ? "B" : ""); Object.assign(badge.style, { position: "absolute", top: "4px", right: "4px", minWidth: "18px", minHeight: "18px", padding: "1px 4px", borderRadius: "3px", textAlign: "center", background: item.key === widget.state.aKey ? "#9a6a12" : item.key === widget.state.bKey ? "#1f5f9f" : "transparent", color: "#fff", fontWeight: "700", fontSize: "10px", display: badge.textContent ? "block" : "none" });
             thumbWrap.append(thumb, badge);
             row.appendChild(thumbWrap);
@@ -503,7 +630,7 @@ app.registerExtension({
         const originalSerialize = nodeType.prototype.onSerialize;
         nodeType.prototype.onSerialize = function (data) { originalSerialize?.apply(this, arguments); data.properties ||= {}; const state = this.ruyiCompareWidget?.state || getState(this); data.properties[STATE_KEY] = { ...state, displayNames: { ...state.displayNames }, saveNames: { ...state.saveNames }, autoSaveKeys: { ...state.autoSaveKeys } }; data.properties[LAST_ITEMS_KEY] = normalizePersistedCompareItems(this.ruyiCompareWidget?.items || this.ruyiCompareItems || []); syncManifestWidget(this, state); };
         const originalExecuted = nodeType.prototype.onExecuted;
-        nodeType.prototype.onExecuted = function (data) { originalExecuted?.apply(this, arguments); this.imgs = null; this.ruyiCompareItems = Array.isArray(data?.compare_items) ? data.compare_items : []; this.ruyiCompareWidget?.setItems?.(this.ruyiCompareItems, Array.isArray(data?.autosaved) ? data.autosaved : []); this.setDirtyCanvas?.(true, true); };
+        nodeType.prototype.onExecuted = function (data) { originalExecuted?.call(this, withoutNativeImagePreview(data)); this.imgs = null; this.images = null; this.ruyiCompareItems = Array.isArray(data?.compare_items) ? data.compare_items : []; this.ruyiCompareWidget?.setItems?.(this.ruyiCompareItems, Array.isArray(data?.autosaved) ? data.autosaved : []); this.setDirtyCanvas?.(true, true); };
         const originalRemoved = nodeType.prototype.onRemoved;
         nodeType.prototype.onRemoved = function () { this.ruyiCompareWidget?.onRemoved?.(); originalRemoved?.apply(this, arguments); };
     },

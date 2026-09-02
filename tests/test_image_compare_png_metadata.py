@@ -11,6 +11,12 @@ from PIL import Image
 MODULE_PATH = Path(__file__).resolve().parents[1] / "ruyi_image_compare.py"
 
 
+def _ruyi_payload(result):
+    raw = result["ui"]["ruyi_data"]
+    assert isinstance(raw, list) and raw
+    return json.loads(raw[0])
+
+
 def load_module(tmp_dir: str, output_dir: str):
     folder_paths = types.ModuleType("folder_paths")
     folder_paths.get_temp_directory = lambda: tmp_dir
@@ -110,7 +116,7 @@ def test_preview_png_contains_comfy_prompt_and_workflow_metadata():
 
         manifest = json.dumps({"autoSaveKeys": ["1:0"], "displayNames": {"1": "sample"}})
         result = module.RuYiImageCompare.execute({"image_1": image}, manifest)
-        preview = result["ui"]["compare_items"][0]["preview"]
+        preview = _ruyi_payload(result)["compare_items"][0]["preview"]
         preview_path = Path(temp_dir) / preview["subfolder"] / preview["filename"]
 
         with Image.open(preview_path) as saved:
@@ -118,7 +124,7 @@ def test_preview_png_contains_comfy_prompt_and_workflow_metadata():
             assert json.loads(saved.info["workflow"])["nodes"][0]["id"] == 10
             assert json.loads(saved.info["extra"])["x"] == 1
 
-        saved_path = Path(result["ui"]["autosaved"][0]["full_path"])
+        saved_path = Path(_ruyi_payload(result)["autosaved"][0]["full_path"])
         with Image.open(saved_path) as saved_output:
             assert json.loads(saved_output.info["prompt"])["10"]["inputs"]["seed"] == 123
             assert json.loads(saved_output.info["workflow"])["nodes"][0]["id"] == 10
@@ -136,7 +142,7 @@ def test_disable_metadata_keeps_preview_png_clean():
         image = torch.full((1, 8, 8, 3), 0.5, dtype=torch.float32)
 
         result = module.RuYiImageCompare.execute({"image_1": image}, "{}")
-        preview = result["ui"]["compare_items"][0]["preview"]
+        preview = _ruyi_payload(result)["compare_items"][0]["preview"]
         preview_path = Path(temp_dir) / preview["subfolder"] / preview["filename"]
 
         with Image.open(preview_path) as saved:

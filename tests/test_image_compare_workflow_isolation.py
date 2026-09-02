@@ -1,3 +1,4 @@
+import json
 import tempfile
 import types
 from pathlib import Path
@@ -5,6 +6,12 @@ from pathlib import Path
 import torch
 
 from test_image_compare_png_metadata import load_module
+
+
+def _ruyi_payload(result):
+    raw = result["ui"]["ruyi_data"]
+    assert isinstance(raw, list) and raw
+    return json.loads(raw[0])
 
 
 def _hidden(node_id: str, workflow_id: str):
@@ -22,13 +29,13 @@ def test_temp_preview_cleanup_is_isolated_per_workflow_id():
 
         module.RuYiImageCompare.hidden = _hidden("54", "workflow-A")
         result_a = module.RuYiImageCompare.execute({"image_1": image}, "{}")
-        preview_a = result_a["ui"]["compare_items"][0]["preview"]
+        preview_a = _ruyi_payload(result_a)["compare_items"][0]["preview"]
         preview_a_path = Path(temp_dir) / preview_a["subfolder"] / preview_a["filename"]
         assert preview_a_path.is_file()
 
         module.RuYiImageCompare.hidden = _hidden("54", "workflow-B")
         result_b = module.RuYiImageCompare.execute({"image_1": image}, "{}")
-        preview_b = result_b["ui"]["compare_items"][0]["preview"]
+        preview_b = _ruyi_payload(result_b)["compare_items"][0]["preview"]
         preview_b_path = Path(temp_dir) / preview_b["subfolder"] / preview_b["filename"]
         assert preview_b_path.is_file()
 
@@ -42,13 +49,13 @@ def test_temp_preview_cleanup_still_replaces_previous_run_in_same_workflow():
 
         module.RuYiImageCompare.hidden = _hidden("54", "workflow-A")
         result_first = module.RuYiImageCompare.execute({"image_1": image}, "{}")
-        preview_first = result_first["ui"]["compare_items"][0]["preview"]
+        preview_first = _ruyi_payload(result_first)["compare_items"][0]["preview"]
         preview_first_path = Path(temp_dir) / preview_first["subfolder"] / preview_first["filename"]
         assert preview_first_path.is_file()
 
         module.RuYiImageCompare.hidden = _hidden("54", "workflow-A")
         result_second = module.RuYiImageCompare.execute({"image_1": image}, "{}")
-        preview_second = result_second["ui"]["compare_items"][0]["preview"]
+        preview_second = _ruyi_payload(result_second)["compare_items"][0]["preview"]
         preview_second_path = Path(temp_dir) / preview_second["subfolder"] / preview_second["filename"]
         assert preview_second_path.is_file()
 

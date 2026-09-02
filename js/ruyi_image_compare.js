@@ -83,6 +83,42 @@ function withoutNativeImagePreview(data) {
     return copy;
 }
 
+function getRuYiExecutionPayload(data) {
+    const wrapped = data?.ruyi_data;
+
+    // ComfyUI UI outputs are list-shaped and execution.py flattens every UI
+    // field as an iterable. Keep RuYi-only metadata as opaque JSON strings so
+    // Jobs / Media Assets do not count it as another media output.
+    if (Array.isArray(wrapped)) {
+        const compareItems = [];
+        const autosaved = [];
+        for (const entry of wrapped) {
+            if (typeof entry !== "string") continue;
+            try {
+                const payload = JSON.parse(entry);
+                if (!payload || typeof payload !== "object") continue;
+                if (Array.isArray(payload.compare_items)) compareItems.push(...payload.compare_items);
+                if (Array.isArray(payload.autosaved)) autosaved.push(...payload.autosaved);
+            } catch {}
+        }
+        return { compareItems, autosaved };
+    }
+
+    // Backward compatibility with the short-lived early 0.1.22 wrapper.
+    if (wrapped && typeof wrapped === "object") {
+        return {
+            compareItems: Array.isArray(wrapped.compare_items) ? wrapped.compare_items : [],
+            autosaved: Array.isArray(wrapped.autosaved) ? wrapped.autosaved : [],
+        };
+    }
+
+    // Backward compatibility with 0.1.21 history entries.
+    return {
+        compareItems: Array.isArray(data?.compare_items) ? data.compare_items : [],
+        autosaved: Array.isArray(data?.autosaved) ? data.autosaved : [],
+    };
+}
+
 // ComfyUI stores executed `ui.images` in the reactive node-output store before
 // invoking the node's onExecuted hook. RuYi still emits `ui.images` from Python
 // so Jobs / Media Assets can index the files, but its canvas node uses the
@@ -93,7 +129,7 @@ function withoutNativeImagePreview(data) {
 function suppressNativePreviewForRuYiExecutedEvent(event) {
     const detail = event?.detail;
     const output = detail?.output;
-    if (!Array.isArray(output?.compare_items)) return;
+    if (!(output?.ruyi_data && typeof output.ruyi_data === "object") && !Array.isArray(output?.compare_items)) return;
     detail.output = withoutNativeImagePreview(output);
 }
 
@@ -630,7 +666,7 @@ app.registerExtension({
         const originalSerialize = nodeType.prototype.onSerialize;
         nodeType.prototype.onSerialize = function (data) { originalSerialize?.apply(this, arguments); data.properties ||= {}; const state = this.ruyiCompareWidget?.state || getState(this); data.properties[STATE_KEY] = { ...state, displayNames: { ...state.displayNames }, saveNames: { ...state.saveNames }, autoSaveKeys: { ...state.autoSaveKeys } }; data.properties[LAST_ITEMS_KEY] = normalizePersistedCompareItems(this.ruyiCompareWidget?.items || this.ruyiCompareItems || []); syncManifestWidget(this, state); };
         const originalExecuted = nodeType.prototype.onExecuted;
-        nodeType.prototype.onExecuted = function (data) { originalExecuted?.call(this, withoutNativeImagePreview(data)); this.imgs = null; this.images = null; this.ruyiCompareItems = Array.isArray(data?.compare_items) ? data.compare_items : []; this.ruyiCompareWidget?.setItems?.(this.ruyiCompareItems, Array.isArray(data?.autosaved) ? data.autosaved : []); this.setDirtyCanvas?.(true, true); };
+        nodeType.prototype.onExecuted = function (data) { const payload = getRuYiExecutionPayload(data); originalExecuted?.call(this, withoutNativeImagePreview(data)); this.imgs = null; this.images = null; this.ruyiCompareItems = payload.compareItems; this.ruyiCompareWidget?.setItems?.(this.ruyiCompareItems, payload.autosaved); this.setDirtyCanvas?.(true, true); };
         const originalRemoved = nodeType.prototype.onRemoved;
         nodeType.prototype.onRemoved = function () { this.ruyiCompareWidget?.onRemoved?.(); originalRemoved?.apply(this, arguments); };
     },

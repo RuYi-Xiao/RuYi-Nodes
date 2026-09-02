@@ -24,6 +24,7 @@ from server import PromptServer
 
 CATEGORY = "RuYi-Nodes/image"
 TEMP_SUBFOLDER = "ruyi_image_compare"
+MEDIA_ASSET_SUBFOLDER = "ruyi_image_compare_assets"
 OUTPUT_SUBFOLDER = "RuYi-Compare"
 THUMB_MAX_SIDE = 256
 MAX_INPUTS = 64
@@ -116,6 +117,17 @@ def _save_frame_files(image: Image.Image, run_id: str, input_no: int, frame_no: 
     preview = {"filename": preview_name, "subfolder": TEMP_SUBFOLDER, "type": "temp"}
     thumbnail = {"filename": thumb_name, "subfolder": TEMP_SUBFOLDER, "type": "temp"}
     return preview, thumbnail, preview_path.stat().st_size
+
+
+def _save_media_asset_file(preview_path: Path, run_id: str, input_no: int, frame_no: int) -> tuple[dict[str, str], Path]:
+    temp_root = Path(folder_paths.get_temp_directory())
+    asset_dir = temp_root / MEDIA_ASSET_SUBFOLDER
+    asset_dir.mkdir(parents=True, exist_ok=True)
+    asset_name = f"ruyi_asset_{run_id}_i{input_no}_f{frame_no}.png"
+    asset_path = asset_dir / asset_name
+    shutil.copy2(preview_path, asset_path)
+    asset = {"filename": asset_name, "subfolder": MEDIA_ASSET_SUBFOLDER, "type": "temp"}
+    return asset, asset_path
 
 
 def _sorted_autogrow_inputs(images: Any) -> list[tuple[int, torch.Tensor]]:
@@ -442,7 +454,9 @@ class RuYiImageCompare(io.ComfyNode):
     def execute(cls, images: io.Autogrow.Type, save_manifest: str = "{}") -> io.NodeOutput:
         run_id = uuid.uuid4().hex[:12]
         compare_items: list[dict[str, Any]] = []
+        media_asset_images: list[dict[str, str]] = []
         new_files: list[Path] = []
+        new_media_asset_files: list[Path] = []
         temp_root = Path(folder_paths.get_temp_directory())
         pnginfo = _create_png_metadata(cls)
         try:
@@ -451,7 +465,11 @@ class RuYiImageCompare(io.ComfyNode):
                 frame_count = len(frames)
                 for frame_no, image in enumerate(frames):
                     preview, thumb, size_bytes = _save_frame_files(image, run_id, input_no, frame_no, pnginfo)
-                    new_files.extend([temp_root / preview["subfolder"] / preview["filename"], temp_root / thumb["subfolder"] / thumb["filename"]])
+                    preview_path = temp_root / preview["subfolder"] / preview["filename"]
+                    new_files.extend([preview_path, temp_root / thumb["subfolder"] / thumb["filename"]])
+                    media_asset, media_asset_path = _save_media_asset_file(preview_path, run_id, input_no, frame_no)
+                    media_asset_images.append(media_asset)
+                    new_media_asset_files.append(media_asset_path)
                     compare_items.append({
                         "key": f"{input_no}:{frame_no}",
                         "input": input_no,
@@ -465,7 +483,7 @@ class RuYiImageCompare(io.ComfyNode):
                         "thumb": thumb,
                     })
         except Exception:
-            for path in new_files:
+            for path in [*new_files, *new_media_asset_files]:
                 try:
                     path.unlink(missing_ok=True)
                 except OSError:
@@ -474,7 +492,8 @@ class RuYiImageCompare(io.ComfyNode):
         _replace_temp_files(_workflow_cleanup_key(cls), new_files)
         manifest = _parse_manifest(save_manifest)
         autosaved = _autosave_compare_items(compare_items, manifest)
-        return io.NodeOutput(ui={"images": [item["preview"] for item in compare_items], "compare_items": compare_items, "autosaved": autosaved})
+        ruyi_data = json.dumps({"compare_items": compare_items, "autosaved": autosaved}, ensure_ascii=False, separators=(",", ":"))
+        return io.NodeOutput(ui={"images": media_asset_images, "ruyi_data": [ruyi_data]})
 
 
 @PromptServer.instance.routes.post("/ruyi_nodes/image_compare/manual_save")

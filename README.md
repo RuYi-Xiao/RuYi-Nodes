@@ -153,6 +153,8 @@ Display names and save names are independent. For example, an image may display 
 
 Image Compare outputs are exposed through ComfyUI's standard image-output channel, so generated comparison candidates appear in **Media Assets → Generated** and task/output history.
 
+Media Asset PNGs are kept separate from the node-local A/B preview cache. Re-running the same Image Compare node can therefore replace its previous Compare previews without invalidating earlier Media Assets/history entries; those asset copies remain standard ComfyUI temporary assets and follow ComfyUI's own lifecycle.
+
 The redundant native image preview is suppressed inside the node itself, leaving the custom A/B comparison interface as the primary preview.
 
 PNG previews/saves preserve ComfyUI prompt/workflow metadata when metadata is enabled. A saved PNG can therefore be dragged back into ComfyUI to restore its workflow and generation information.
@@ -374,6 +376,8 @@ MODEL
 #### 媒体资产与工作流元数据
 
 图像对比结果通过 ComfyUI 标准图片输出通道注册，因此候选图会出现在 **媒体资产 → 已生成** 以及任务/输出历史中。
+
+媒体资产 PNG 与节点内部的 A/B 对比预览缓存彼此独立。因此同一个图像对比节点再次执行时，仍可清理上一轮 Compare 预览，而不会使此前的媒体资产/历史记录失效；资产副本继续作为 ComfyUI 标准临时资产，由 ComfyUI 自己管理生命周期。
 
 节点内部会抑制 ComfyUI 默认的重复图片预览，只保留 RuYi 自己的 A/B 对比界面作为主要预览区域。
 

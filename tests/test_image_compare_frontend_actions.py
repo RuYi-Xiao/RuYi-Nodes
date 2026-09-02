@@ -11,14 +11,16 @@ def test_default_comfy_preview_is_suppressed_before_core_node_output_store_consu
     text = source()
     assert "function suppressNativePreviewForRuYiExecutedEvent" in text
     assert 'api.addEventListener("executed", suppressNativePreviewForRuYiExecutedEvent)' in text
-    assert "Array.isArray(output?.compare_items)" in text
+    assert "output?.ruyi_data" in text
+    assert "getRuYiExecutionPayload" in text
     assert "detail.output = withoutNativeImagePreview(output)" in text
     assert text.index('api.addEventListener("executed", suppressNativePreviewForRuYiExecutedEvent)') < text.index("app.registerExtension({")
 
 
 def test_standard_images_remain_emitted_by_backend_for_assets():
     py = (Path(__file__).resolve().parents[1] / "ruyi_image_compare.py").read_text(encoding="utf-8")
-    assert '"images": [item["preview"] for item in compare_items]' in py
+    assert '"images": media_asset_images' in py
+    assert 'MEDIA_ASSET_SUBFOLDER = "ruyi_image_compare_assets"' in py
 
 
 def test_thumbnail_context_menu_targets_full_preview_not_thumbnail():
@@ -30,3 +32,11 @@ def test_thumbnail_context_menu_targets_full_preview_not_thumbnail():
     assert "viewUrl(item.preview)" in text
     assert "showSaveFilePicker" in text
     assert "ClipboardItem" in text
+
+
+def test_execution_payload_parses_comfy_safe_json_metadata_list():
+    text = source()
+    assert 'Array.isArray(wrapped)' in text
+    assert 'JSON.parse' in text
+    assert 'compare_items' in text
+    assert 'autosaved' in text

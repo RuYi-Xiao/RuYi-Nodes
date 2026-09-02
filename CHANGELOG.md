@@ -2,6 +2,21 @@
 
 All notable user-facing changes to **RuYi-Nodes** will be documented in this file.
 
+## 0.1.22 - 2026-09-02
+
+### Fixed
+
+- Decoupled RuYi Image Compare's node-local A/B preview cache from ComfyUI Media Assets.
+- Re-running the same Image Compare node still removes its previous compare previews and thumbnails, preserving the existing bounded Compare temp-cache behavior.
+- Media Assets now receive dedicated temporary PNG copies through ComfyUI's standard `ui.images` channel, so earlier Generated/history cards are no longer invalidated when the same compare node runs again.
+- Media Asset files are not tracked or deleted by RuYi's per-node preview cleanup and therefore follow ComfyUI's own temporary-asset lifecycle.
+- Encoded RuYi-only compare/autosave execution metadata as an opaque JSON-string UI field. This follows ComfyUI's list-shaped UI-output contract, keeps the custom A/B payload intact after execution.py merges UI results, and prevents task summaries from counting the metadata as extra media outputs.
+
+### Tests
+
+- Added regression coverage proving that a previous Compare preview is removed on re-run while its corresponding ComfyUI Media Asset remains available.
+- Added regression coverage for ComfyUI UI-output flattening and frontend decoding of the opaque RuYi metadata payload.
+
 ## 0.1.21 - 2026-08-31
 
 ### Added

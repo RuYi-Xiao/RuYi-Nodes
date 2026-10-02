@@ -45,22 +45,43 @@
       }
     }
   },
-  "RuYiTextPreview": {
-    "display_name": "RuYi text-preview",
-    "description": "Monitor a STRING after execution and pass it through unchanged.",
+  "RuYiImageCompare": {
+    "display_name": "RuYi image-compare",
+    "description": "Compare any two images from multiple dynamic inputs using Wipe or Toggle modes."
+  },
+  "RuYiEmptyLatentImage": {
+    "display_name": "RuYi Empty Latent Image",
+    "description": "Empty latent images with resolution presets, width/height swap, alignment and proportional scaling.",
     "inputs": {
-      "text": {
-        "name": "Text"
+      "width": {"name": "width"},
+      "height": {"name": "height"},
+      "batch_size": {"name": "batch size"},
+      "alignment": {"name": "resolution alignment", "tooltip": "Round both dimensions to this multiple, according to your model's requirements."},
+      "latent_type": {"name": "latent type", "tooltip": "SD1/SDXL uses 4 channels, SD3/Flux uses 16 channels, and Anima uses a single-frame 16-channel layout."}
+    },
+    "outputs": {"0": {"name": "Latent"}}
+  },
+  "RuYiPrompt": {
+    "display_name": "RuYi Prompt",
+    "description": "Sectioned prompt editor with local tags and offline spelling checks.",
+    "inputs": {
+      "clip": {
+        "name": "CLIP"
+      },
+      "prompt_data": {
+        "name": "Prompt editor"
+      },
+      "trigger_words": {
+        "name": "Trigger words"
       }
     },
     "outputs": {
       "0": {
-        "name": "STRING"
+        "name": "Positive"
+      },
+      "1": {
+        "name": "Negative"
       }
     }
-  },
-  "RuYiImageCompare": {
-    "display_name": "RuYi image-compare",
-    "description": "Compare any two images from multiple dynamic inputs using Wipe or Toggle modes."
   }
 }

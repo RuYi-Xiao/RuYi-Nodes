@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="zh"><meta charset="utf-8"><title>RuYi LoRA UI regression</title>
+<style>body { background:#252525; color:#eee; font:14px system-ui; } #results {white-space:pre-wrap;} .test-node {margin:20px 0; width:1000px; border:1px solid #555;}</style>
+<h2>RuYi LoRA UI regression</h2><pre id="results"></pre><div id="nodes"></div>
+<script type="module">
+import { app } from '/scripts/app.js';
+import '/extensions/RuYi/ruyi_multi_lora.js';
+const results = document.querySelector('#results');
+const extension = app.extensions.find(x => x.name === 'RuYi-Nodes.MultiLoRA');
+const frames = () => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+function equal(actual, expected) {
+    if (actual !== expected) throw new Error(`Expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
+}
+function button(panel, text) { return [...panel.querySelectorAll('button')].find(x => x.textContent === text); }
+function setPickerMode(panel, value) {
+    panel.querySelector('.ruyi-picker-mode').click();
+    document.querySelector(`.ruyi-settings-menu [data-value="${value}"]`).click();
+}
+function createNode(properties = {}, modelOnly = true) {
+    const host = document.createElement('div'); host.className = 'test-node';
+    document.querySelector('#nodes').append(host);
+    const node = {
+        comfyClass: modelOnly ? 'RuYiMultiLoraLoaderModelOnly' : 'RuYiMultiLoraLoader',
+        properties, size:[1000,300], widgets:[], graph: app.graph,
+        setSize(size) { this.size = size; }, setDirtyCanvas() {},
+        addDOMWidget(name, type, panel, options) {
+            host.append(panel);
+            const widget = {...options, name, type};
+            Object.defineProperty(widget, 'value', {get:options.getValue, set(value) {options.setValue(value);}});
+            this.widgets.push(widget); return widget;
+        },
+    };
+    const {widget} = extension.getCustomWidgets().RUYI_LORA_STACK(node, 'lora_stack');
+    return {node, widget, panel:host, host};
+}
+async function test(name, run) {
+    try { await run(); results.textContent += `PASS ${name}\n`; }
+    catch (error) { results.textContent += `FAIL ${name}: ${error.message}\n`; }
+}
+await test('Unified weight step, arrows, precision, limits and direct input', async () => {
+    const {panel, widget, node} = createNode(); await frames();
+    await button(panel, '✚ 添加 LoRA').onclick(); await frames();
+    const control = panel.querySelector('.ruyi-controls .ruyi-number-control');
+    equal(!!control, true);
+    const input = control.querySelector('input');
+    const [decrease, increase] = control.querySelectorAll('button');
+    increase.click(); equal(JSON.parse(widget.value)[0].strength_model, 1.1);
+    decrease.click(); equal(JSON.parse(widget.value)[0].strength_model, 1);
+    button(panel, '设置').click();
+    const settings = panel.querySelector('.ruyi-settings');
+    equal(settings.querySelectorAll('input').length, 2);
+    const inc = settings.querySelector('input[aria-label="权重增减幅度"]');
+    inc.value = '0.25'; inc.dispatchEvent(new Event('change'));
+    increase.click(); equal(JSON.parse(widget.value)[0].strength_model, 1.25);
+    decrease.click(); equal(JSON.parse(widget.value)[0].strength_model, 1);
+    const stepControl = inc.closest('.ruyi-number-control');
+    stepControl.querySelector('button:last-child').click(); equal(inc.value, '0.26');
+    stepControl.querySelector('button').click(); equal(inc.value, '0.25');
+    input.value = '99.95'; input.dispatchEvent(new Event('change')); increase.click();
+    equal(JSON.parse(widget.value)[0].strength_model, 100);
+    input.value = '-99.99'; input.dispatchEvent(new Event('change')); decrease.click();
+    equal(JSON.parse(widget.value)[0].strength_model, -100);
+    input.value = '0.35'; input.dispatchEvent(new Event('change'));
+    equal(JSON.parse(widget.value)[0].strength_model, 0.35);
+    input.value = ''; input.dispatchEvent(new Event('change'));
+    equal(JSON.parse(widget.value)[0].strength_model, 0.35);
+    inc.value = '0'; inc.dispatchEvent(new Event('change')); equal(inc.value, '0.25');
+    const restored = createNode(JSON.parse(JSON.stringify(node.properties))); await frames();
+    button(restored.panel, '设置').click();
+    equal(restored.panel.querySelector('.ruyi-settings input[aria-label="权重增减幅度"]').value, '0.25');
+});
+await test('Visible count arrows clamp and save integer values', async () => {
+    const {panel, node} = createNode(); await frames();
+    equal(panel.querySelector('.ruyi-toolbar .ruyi-visible-count'), null);
+    equal(panel.querySelector('.ruyi-settings').hidden, true);
+    button(panel, '设置').click();
+    const control = panel.querySelector('.ruyi-settings .ruyi-visible-count .ruyi-number-control');
+    equal(!!control, true);
+    const input = control.querySelector('input');
+    const [decrease, increase] = control.querySelectorAll('button');
+    increase.click(); equal(node.properties.ruyi_visible_lora_count, 4);
+    input.value = '0'; input.dispatchEvent(new Event('change')); decrease.click();
+    equal(node.properties.ruyi_visible_lora_count, 0);
+    input.value = '99'; input.dispatchEvent(new Event('change')); increase.click();
+    equal(node.properties.ruyi_visible_lora_count, 99);
+    const rect = input.getBoundingClientRect();
+    equal(rect.width <= 30 && rect.width >= 26, true);
+    equal(Math.abs((decrease.getBoundingClientRect().left + increase.getBoundingClientRect().right)/2 - (rect.left + rect.right)/2) < 1, true);
+});
+await test('Picker restores last folder/model even when there are no matching LoRAs', async () => {
+    const {panel, node} = createNode(); await frames();
+    await button(panel, '✚ 添加 LoRA').onclick(); await frames();
+    button(panel, '设置').click();
+    setPickerMode(panel, 'last');
+    const open = async () => { await panel.querySelector('.ruyi-lora-select').onclick(new Event('click')); await frames(); };
+    await open();
+    const [folder, model] = document.querySelectorAll('.ruyi-picker-filter');
+    folder.value = 'Krea2'; folder.dispatchEvent(new Event('change'));
+    model.value = 'MiniMax H3'; model.dispatchEvent(new Event('change'));
+    equal(document.querySelector('.ruyi-picker').textContent.includes('没有匹配的 LoRA'), true);
+    document.body.dispatchEvent(new Event('pointerdown', {bubbles:true})); await open();
+    equal(document.querySelectorAll('.ruyi-picker-filter')[0].value, 'Krea2');
+    equal(document.querySelectorAll('.ruyi-picker-filter')[1].value, 'MiniMax H3');
+    document.body.dispatchEvent(new Event('pointerdown', {bubbles:true}));
+    const restored = createNode(JSON.parse(JSON.stringify(node.properties))); await frames();
+    await button(restored.panel, '✚ 添加 LoRA').onclick(); await frames();
+    await restored.panel.querySelector('.ruyi-lora-select').onclick(new Event('click')); await frames();
+    equal(document.querySelectorAll('.ruyi-picker-filter')[0].value, 'Krea2');
+    equal(document.querySelectorAll('.ruyi-picker-filter')[1].value, 'MiniMax H3');
+    document.body.dispatchEvent(new Event('pointerdown', {bubbles:true}));
+    setPickerMode(panel, 'default'); await open();
+    equal(document.querySelectorAll('.ruyi-picker-filter')[0].value, '');
+    equal(document.querySelectorAll('.ruyi-picker-filter')[1].value, '');
+    document.body.dispatchEvent(new Event('pointerdown', {bubbles:true}));
+});
+await test('MODEL and CLIP weights remain independent', async () => {
+    const {panel, widget} = createNode({}, false); await frames();
+    await button(panel, '✚ 添加 LoRA').onclick(); await frames();
+    const controls = panel.querySelectorAll('.ruyi-controls .ruyi-number-control');
+    equal(controls.length, 2);
+    controls[1].querySelectorAll('button')[1].click();
+    equal(JSON.parse(widget.value)[0].strength_model, 1);
+    equal(JSON.parse(widget.value)[0].strength_clip, 1.1);
+});
+await test('Workflow restore updates settings and keeps other nodes independent', async () => {
+    const {panel, widget, node} = createNode(); await frames();
+    node.properties = {ruyi_visible_lora_count:5, ruyi_lora_settings:{step:0.2, pickerMode:'last'}};
+    widget.setValue('[{"strength_model":0.3,"lora":""}]'); await frames();
+    button(panel, '设置').click();
+    equal(panel.querySelector('.ruyi-settings input[aria-label="权重增减幅度"]').value, '0.2');
+    equal(panel.querySelector('.ruyi-picker-mode').dataset.value, 'last');
+    panel.querySelector('.ruyi-controls .ruyi-number-control button:last-child').click();
+    equal(JSON.parse(widget.value)[0].strength_model, 0.5);
+    const other = createNode(); await frames(); button(other.panel, '设置').click();
+    equal(other.panel.querySelector('.ruyi-settings input[aria-label="权重增减幅度"]').value, '0.1');
+    equal(other.panel.querySelector('.ruyi-picker-mode').dataset.value, 'default');
+});
+await test('Enable/disable and trigger toggles preserve cards and list scroll with real DOMWidget value setters', async () => {
+    const {panel, widget} = createNode({ruyi_visible_lora_count:2}); await frames();
+    for (let i=0;i<8;i++) await button(panel, '✚ 添加 LoRA').onclick();
+    await frames();
+    const list = panel.querySelector('.ruyi-list');
+    list.scrollTop = 300;
+    const top = list.scrollTop;
+    const card = list.children[3];
+    card.querySelector('.ruyi-enable').click(); await frames();
+    equal(list.scrollTop, top); equal(list.children[3], card);
+    equal(JSON.parse(widget.value)[3].enabled, false);
+    card.querySelector('.ruyi-round-toggle').click(); await frames();
+    equal(list.scrollTop, top); equal(list.children[3], card);
+    button(panel, '全部开/关').click(); await frames();
+    equal(list.scrollTop, top); equal(list.children[3], card);
+    await button(panel, '刷新列表/资料').onclick(); await frames();
+    equal(list.scrollTop, top);
+});
+await test('Toolbar and both weight controls fit the minimum node width in Chinese and English', async () => {
+    for (const language of ['zh', 'en']) {
+        document.documentElement.lang = language;
+        const {panel, node} = createNode({}, false);
+        node.size[0] = 700; node.widgets[0].onResize(); await frames();
+        await panel.querySelector('.ruyi-toolbar button').onclick(); await frames();
+        const surface = panel.querySelector('.ruyi-lora-surface');
+        const toolbar = panel.querySelector('.ruyi-toolbar');
+        equal(toolbar.lastElementChild.getBoundingClientRect().right <= surface.getBoundingClientRect().right + 1, true);
+        const controls = panel.querySelector('.ruyi-controls');
+        equal(controls.lastElementChild.getBoundingClientRect().right <= surface.getBoundingClientRect().right + 1, true);
+    }
+    document.documentElement.lang = 'zh';
+});
+await test('Number fields do not forward label hover to an arrow and picker chevron is centered', async () => {
+    const {panel} = createNode(); await frames();
+    await button(panel, '✚ 添加 LoRA').onclick(); button(panel, '设置').click(); await frames();
+    for (const control of panel.querySelectorAll('.ruyi-number-control')) {
+        equal(control.closest('label'), null);
+        equal(control.querySelector('input').getAttribute('aria-label') !== null, true);
+    }
+    const mode = panel.querySelector('.ruyi-picker-mode');
+    equal(mode.getAttribute('aria-label'), 'LoRA 选择界面打开设置');
+    equal(getComputedStyle(mode).alignItems, 'center');
+    equal(getComputedStyle(mode, '::after').width, '6px');
+});
+
+await test('Add has a green plus and delete has the matching red cross',async()=>{const {panel}=createNode();await frames();const add=panel.querySelector('.ruyi-toolbar button'),icon=add.querySelector('.ruyi-add-icon');equal(icon.textContent,'✚');equal(getComputedStyle(icon).color,'rgb(131, 206, 141)');await add.onclick();await frames();const remove=panel.querySelector('.ruyi-controls .danger');equal(remove.textContent,'❌ 删除');equal(getComputedStyle(remove).color,'rgb(242, 176, 176)');await remove.onclick();await frames();equal(panel.querySelectorAll('.ruyi-lora-row').length,0);});
+document.title = results.textContent.includes('FAIL') ? 'FAIL RuYi UI tests' : 'PASS RuYi UI tests';
+</script></html>

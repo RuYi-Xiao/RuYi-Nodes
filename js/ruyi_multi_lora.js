@@ -1,4 +1,5 @@
 import { app } from "../../scripts/app.js";
+import './theme.mjs';
 
 const RUYI_WIDGET_TYPE = "RUYI_LORA_STACK";
 const RUYI_NODE_NAMES = new Set([
@@ -14,7 +15,7 @@ const PICKER_PREFETCH_MAX = 120;
 const PICKER_VIRTUALIZE_THRESHOLD = 180;
 const THUMBNAIL_CACHE_MAX = 512;
 const PANEL_SIDE_INSET = 20;
-const LIST_SCROLL_TRACK = 10;
+const LIST_SCROLL_TRACK = 12;
 const RESTORE_FIT_MAX_FRAMES = 60;
 const ESTIMATED_TOOLBAR_HEIGHT = 42;
 const ESTIMATED_ROW_HEIGHT = 165;
@@ -31,12 +32,17 @@ let thumbnailCacheGeneration = 0;
 
 const I18N = {
     en: {
-        addLora: "+ Add LoRA",
+        addLora: "Add LoRA",
         toggleAll: "Toggle All",
         refresh: "Refresh list / metadata",
         showCountPrefix: "Show",
         showCountSuffix: "LoRAs",
         showCountTitle: "Maximum number of LoRA cards shown before internal scrolling. 0 = unlimited.",
+        settings: "Settings",
+        weightStep: "Weight step",
+        pickerMode: "Open LoRA picker with",
+        pickerDefault: "Initial",
+        pickerLast: "Remember last",
         hint: "Preview and metadata are read from ComfyUI-Lora-Manager .metadata.json sidecars; LoRA loading still works without scraped metadata.",
         noPreview: "NO\nPREVIEW",
         selectLora: "Select LoRA…",
@@ -69,12 +75,17 @@ const I18N = {
         emptyList: 'No LoRA added. Click "+ Add LoRA".',
     },
     zh: {
-        addLora: "+ 添加 LoRA",
+        addLora: "添加 LoRA",
         toggleAll: "全部开/关",
         refresh: "刷新列表/资料",
         showCountPrefix: "显示",
         showCountSuffix: "个 LoRA",
         showCountTitle: "内部滚动前最多完整显示的 LoRA 块数量。0 = 不限高。",
+        settings: "设置",
+        weightStep: "权重增减幅度",
+        pickerMode: "LoRA 选择界面打开设置",
+        pickerDefault: "初始",
+        pickerLast: "记忆上次",
         hint: "封面与资料读取 ComfyUI-Lora-Manager 的 .metadata.json；未刮削也不影响 LoRA 加载。",
         noPreview: "无封面",
         selectLora: "选择 LoRA…",
@@ -130,7 +141,7 @@ function installStyles() {
       .ruyi-lora-panel {
         box-sizing: border-box;
         min-width: 0;
-        color: var(--fg-color, #ddd);
+        color: var(--ruyi-text);
         font: 12px/1.35 system-ui, -apple-system, "Segoe UI", sans-serif;
         padding: 0;
         overflow: visible;
@@ -139,12 +150,14 @@ function installStyles() {
         box-sizing: border-box;
         min-width: 0;
         color: inherit;
-        padding: 4px 10px 7px;
+        background: var(--ruyi-node-bg);
+        padding: 4px 12px 7px 10px;
         overflow: hidden;
       }
       .ruyi-toolbar {
         display: grid;
-        grid-template-columns: max-content max-content max-content max-content 1fr;
+        background: var(--ruyi-group-bg);
+        grid-template-columns: max-content max-content max-content 1fr max-content;
         gap: 6px;
         align-items: center;
         margin: 2px 0 8px;
@@ -153,8 +166,8 @@ function installStyles() {
       .ruyi-lora-row button,
       .ruyi-picker button {
         box-sizing: border-box;
-        border: 1px solid var(--border-color, #505050);
-        color: var(--fg-color, #eee);
+        border: 1px solid var(--ruyi-border);
+        color: var(--ruyi-text);
         border-radius: 5px;
         min-height: 28px;
         height: 28px;
@@ -163,17 +176,17 @@ function installStyles() {
         white-space: nowrap;
       }
       .ruyi-toolbar button {
-        background: #404040;
-        border-color: #666;
+        background: var(--ruyi-control-bg);
+        border-color: var(--ruyi-border);
       }
       .ruyi-lora-row button,
       .ruyi-picker button {
-        background: #343434;
-        border-color: #5a5a5a;
+        background: var(--ruyi-control-bg);
+        border-color: var(--ruyi-border);
       }
-      .ruyi-toolbar button:hover { background: #4a4a4a; }
+      .ruyi-toolbar button:hover { background: var(--ruyi-hover-bg); }
       .ruyi-lora-row button:hover,
-      .ruyi-picker button:hover { background: #3f3f3f; }
+      .ruyi-picker button:hover { background: var(--ruyi-hover-bg); }
       .ruyi-toolbar button:disabled,
       .ruyi-lora-row button:disabled { opacity: .45; cursor: default; }
       .ruyi-visible-count {
@@ -181,12 +194,9 @@ function installStyles() {
         height: 28px;
         display: inline-flex;
         align-items: center;
-        gap: 5px;
-        padding: 3px 7px;
-        border: 1px solid #666;
-        border-radius: 5px;
-        background: #404040;
-        color: var(--fg-color, #eee);
+        gap: 6px;
+        padding: 0;
+        color: var(--ruyi-text);
         white-space: nowrap;
       }
       .ruyi-visible-count input {
@@ -194,14 +204,132 @@ function installStyles() {
         width: 48px;
         height: 22px;
         padding: 1px 4px;
-        border: 1px solid #707070;
-        border-radius: 4px;
-        background: #343434;
-        color: var(--fg-color, #eee);
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+        color: var(--ruyi-text);
         text-align: center;
       }
+      .ruyi-number-control {
+        box-sizing: border-box;
+        height: 28px;
+        border: 1px solid var(--ruyi-border);
+        border-radius: 4px;
+        background: var(--ruyi-control-bg);
+        overflow: hidden;
+        display: inline-flex;
+        align-items: center;
+        gap: 0;
+        flex-shrink: 0;
+      }
+      .ruyi-number-control input[type=number] {
+        appearance: textfield;
+        -moz-appearance: textfield;
+        text-align: center;
+        width: 48px;
+        border-radius: 0;
+      }
+      .ruyi-number-control input::-webkit-inner-spin-button,
+      .ruyi-number-control input::-webkit-outer-spin-button {
+        -webkit-appearance: none;
+        margin: 0;
+      }
+      .ruyi-number-control button {
+        width: 20px;
+        min-width: 20px;
+        padding: 0;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+        font-size: 12px;
+        height: 100%;
+        min-height: 0;
+      }
+      .ruyi-settings .ruyi-visible-count .ruyi-number-control input { width: 28px; }
+      .ruyi-settings {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 14px;
+        padding: 8px;
+        margin-bottom: 8px;
+        border: 1px solid var(--ruyi-border);
+        border-radius: 5px;
+        background: var(--ruyi-group-bg);
+      }
+      .ruyi-settings[hidden] { display: none; }
+      .ruyi-settings .ruyi-setting-field { display: inline-flex; align-items: center; gap: 6px; }
+      .ruyi-settings input, .ruyi-settings select {
+        box-sizing: border-box;
+        height: 28px;
+        background: var(--ruyi-control-bg);
+        color: var(--ruyi-text);
+        border: 1px solid var(--ruyi-border);
+        border-radius: 4px;
+        padding: 2px 5px;
+      }
+      .ruyi-settings input { width: 76px; text-align: center; }
+      .ruyi-settings .ruyi-number-control input {
+        width: 48px;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+        height: 100%;
+        font: inherit;
+      }
+      .ruyi-picker-mode {
+        box-sizing: border-box;
+        width: 112px;
+        height: 28px;
+        padding: 2px 8px;
+        border: 1px solid var(--ruyi-border);
+        border-radius: 4px;
+        background: var(--ruyi-control-bg);
+        color: inherit;
+        font: inherit;
+        text-align: left;
+        cursor: pointer;
+      }
+      .ruyi-picker-mode { display: inline-flex; align-items: center; justify-content: space-between; gap: 8px; }
+      .ruyi-picker-mode::after {
+        content: "";
+        width: 6px;
+        height: 6px;
+        flex-shrink: 0;
+        border-right: 1.5px solid currentColor;
+        border-bottom: 1.5px solid currentColor;
+        transform: rotate(45deg);
+        margin-top: -3px;
+        margin-right: 2px;
+      }
+      .ruyi-settings-menu {
+        box-sizing: border-box;
+        position: fixed;
+        z-index: 100020;
+        border: 1px solid var(--ruyi-border);
+        border-radius: 4px;
+        overflow: hidden;
+        background: var(--ruyi-control-bg);
+        color: var(--ruyi-text);
+        font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      }
+      .ruyi-settings-option {
+        box-sizing: border-box;
+        display: block;
+        width: 100%;
+        border: 0;
+        padding: 6px var(--ruyi-menu-padding);
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        text-align: left;
+        cursor: pointer;
+      }
+      .ruyi-settings-option:hover,
+      .ruyi-settings-option:focus-visible,
+      .ruyi-settings-option[aria-selected="true"] { background: #505050; }
 
       .ruyi-list {
+        background: var(--ruyi-group-bg);
         box-sizing: border-box;
         width: 100%;
         min-width: 0;
@@ -213,7 +341,7 @@ function installStyles() {
         overflow-x: hidden;
         padding: 0;
         margin: 0;
-        scrollbar-width: thin;
+        scrollbar-width: auto;
         overscroll-behavior: contain;
       }
       /* When a per-node visible-count limit is enabled, widen only the scroll
@@ -224,9 +352,12 @@ function installStyles() {
         margin-right: -${LIST_SCROLL_TRACK}px;
         scrollbar-gutter: stable;
       }
-      .ruyi-list.has-scroll-track::-webkit-scrollbar { width: 8px; }
-      .ruyi-list.has-scroll-track::-webkit-scrollbar-track { background: transparent; }
-      .ruyi-list.has-scroll-track::-webkit-scrollbar-thumb {
+      .ruyi-list::-webkit-scrollbar,
+      .ruyi-picker-list::-webkit-scrollbar { width: ${LIST_SCROLL_TRACK}px; }
+      .ruyi-list::-webkit-scrollbar-track,
+      .ruyi-picker-list::-webkit-scrollbar-track { background: transparent; }
+      .ruyi-list::-webkit-scrollbar-thumb,
+      .ruyi-picker-list::-webkit-scrollbar-thumb {
         background: rgba(160,160,160,.55);
         border-radius: 8px;
         border: 2px solid transparent;
@@ -242,12 +373,12 @@ function installStyles() {
         flex: 0 0 auto;
         display: grid;
         grid-template-columns: 92px minmax(0, 1fr);
-        grid-template-rows: auto 28px;
+        grid-template-rows: auto minmax(28px, auto);
         column-gap: 9px;
         row-gap: 6px;
         align-items: stretch;
-        border: 1px solid var(--border-color, #4c4c4c);
-        background: #222222;
+        border: 1px solid var(--ruyi-border);
+        background: var(--ruyi-content-bg);
         border-radius: 8px;
         padding: 8px;
         margin: 0;
@@ -262,8 +393,8 @@ function installStyles() {
         aspect-ratio: 4 / 5;
         border-radius: 6px;
         object-fit: cover;
-        background: #252525;
-        border: 1px solid #555;
+        background: var(--ruyi-content-bg);
+        border: 1px solid var(--ruyi-border);
         flex: 0 0 115px;
       }
       .ruyi-preview.placeholder {
@@ -327,22 +458,22 @@ function installStyles() {
         grid-template-columns: minmax(0, 1fr) max-content;
         align-items: center;
         gap: 7px;
-        background: #3a3a3a;
-        color: var(--fg-color, #eee);
-        border: 1px solid #5a5a5a;
+        background: var(--ruyi-control-bg);
+        color: var(--ruyi-text);
+        border: 1px solid var(--ruyi-border);
         border-radius: 5px;
         padding: 3px 7px;
         cursor: pointer;
         text-align: left;
       }
-      .ruyi-lora-select:hover { background: #474747; }
+      .ruyi-lora-select:hover { background: var(--ruyi-hover-bg); }
       .ruyi-lora-select-title {
         min-width: 0;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
       }
-      .ruyi-lora-select-arrow { color: #aaa; font-size: 10px; }
+      .ruyi-lora-select-arrow { color: var(--ruyi-muted); font-size: 10px; }
       .ruyi-meta-line {
         display: flex;
         min-width: 0;
@@ -350,7 +481,7 @@ function installStyles() {
         align-items: baseline;
       }
       .ruyi-meta-title {
-        color: var(--fg-color, #ddd);
+        color: var(--ruyi-text);
         font-weight: 600;
         overflow: hidden;
         text-overflow: ellipsis;
@@ -383,7 +514,7 @@ function installStyles() {
         gap: 6px;
         min-width: 0;
         align-items: start;
-        color: #aaa;
+        color: var(--ruyi-muted);
         font-size: 10.5px;
         line-height: 1.2;
       }
@@ -409,9 +540,9 @@ function installStyles() {
         display: flex;
         gap: 6px;
         align-items: center;
-        flex-wrap: nowrap;
+        flex-wrap: wrap;
         min-width: 0;
-        height: 28px;
+        height: auto;
         min-height: 28px;
         margin: 0;
       }
@@ -420,7 +551,7 @@ function installStyles() {
       .ruyi-lora-row.is-disabled button,
       .ruyi-lora-row.is-disabled input,
       .ruyi-lora-row.is-disabled .ruyi-lora-select { opacity: 1; }
-      .ruyi-controls label {
+      .ruyi-controls .ruyi-strength-label {
         display: inline-flex;
         align-items: center;
         gap: 4px;
@@ -440,19 +571,21 @@ function installStyles() {
         padding-left: 7px;
         padding-right: 7px;
       }
-      .ruyi-lora-panel[data-lang="en"] .ruyi-controls label,
+      .ruyi-lora-panel[data-lang="en"] .ruyi-controls .ruyi-strength-label,
       .ruyi-lora-panel[data-lang="en"] .ruyi-controls > button,
       .ruyi-lora-panel[data-lang="en"] .ruyi-toggle-box {
         flex-shrink: 0;
       }
-      .ruyi-controls input[type=number] {
+      .ruyi-controls .ruyi-number-control input[type=number] {
         box-sizing: border-box;
-        width: 64px;
+        width: 48px;
         height: 28px;
-        background: #3a3a3a;
-        color: var(--fg-color, #eee);
-        border: 1px solid #5a5a5a;
-        border-radius: 4px;
+        background: var(--ruyi-control-bg);
+        color: var(--ruyi-text);
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+        height: 100%;
         padding: 2px 5px;
       }
       .ruyi-toggle-box {
@@ -463,10 +596,10 @@ function installStyles() {
         align-items: center;
         gap: 7px !important;
         padding: 3px 7px;
-        border: 1px solid #5a5a5a;
+        border: 1px solid var(--ruyi-border);
         border-radius: 5px;
-        background: #3a3a3a;
-        color: var(--fg-color, #ddd) !important;
+        background: var(--ruyi-control-bg);
+        color: var(--ruyi-text) !important;
         white-space: nowrap;
         cursor: pointer;
       }
@@ -481,23 +614,24 @@ function installStyles() {
         margin: 0;
         border-radius: 50%;
         border: 1px solid #797979;
-        background: #252525;
+        background: var(--ruyi-content-bg);
         cursor: pointer;
         transition: background-color .12s ease, box-shadow .12s ease, border-color .12s ease;
       }
       .ruyi-round-toggle:checked {
         background: #bdbdbd;
         border-color: #c6c6c6;
-        box-shadow: inset 0 0 0 4px #3a3a3a;
+        box-shadow: inset 0 0 0 4px var(--ruyi-control-bg);
       }
-      .ruyi-round-toggle:hover { border-color: #aaa; }
+      .ruyi-round-toggle:hover { border-color: var(--ruyi-muted); }
       .ruyi-round-toggle:focus-visible { outline: 1px solid #aaa; outline-offset: 1px; }
       .ruyi-controls-spacer { flex: 1 1 auto; min-width: 2px; }
-      .ruyi-lora-row button { background: #3a3a3a; border-color: #5a5a5a; }
-      .ruyi-lora-row button:hover { background: #474747; }
+      .ruyi-lora-row button { background: var(--ruyi-control-bg); border-color: var(--ruyi-border); }
+      .ruyi-lora-row button:hover { background: var(--ruyi-hover-bg); }
       .ruyi-controls .danger { color: #f2b0b0; }
+      .ruyi-add-icon { color: #83ce8d; font-weight: bold; font-size: 14px; }
       .ruyi-empty {
-        border: 1px dashed var(--border-color, #505050);
+        border: 1px dashed var(--ruyi-border);
         border-radius: 7px;
         padding: 15px 12px;
         text-align: center;
@@ -509,9 +643,9 @@ function installStyles() {
         z-index: 2147483000;
         box-sizing: border-box;
         width: min(680px, calc(100vw - 24px));
-        background: var(--comfy-menu-bg, #202020);
-        color: var(--fg-color, #eee);
-        border: 1px solid var(--border-color, #555);
+        background: var(--ruyi-group-bg);
+        color: var(--ruyi-text);
+        border: 1px solid var(--ruyi-border);
         border-radius: 8px;
         box-shadow: 0 12px 36px rgba(0,0,0,.58);
         overflow: hidden;
@@ -520,8 +654,8 @@ function installStyles() {
       .ruyi-picker-search-wrap {
         box-sizing: border-box;
         padding: 8px;
-        background: #292929;
-        border-bottom: 1px solid var(--border-color, #4d4d4d);
+        background: var(--ruyi-group-bg);
+        border-bottom: 1px solid var(--ruyi-border);
         display: grid;
         grid-template-columns: minmax(240px, 1fr) minmax(135px, .28fr) minmax(135px, .28fr);
         gap: 7px;
@@ -532,9 +666,9 @@ function installStyles() {
         width: 100%;
         height: 31px;
         padding: 4px 9px;
-        color: var(--fg-color, #eee);
-        background: var(--comfy-input-bg, #171717);
-        border: 1px solid var(--border-color, #585858);
+        color: var(--ruyi-text);
+        background: var(--ruyi-control-bg);
+        border: 1px solid var(--ruyi-border);
         border-radius: 5px;
         outline: none;
         min-width: 0;
@@ -543,10 +677,11 @@ function installStyles() {
       .ruyi-picker-filter:focus { border-color: #777; }
       .ruyi-picker-list {
         box-sizing: border-box;
+        background: var(--ruyi-group-bg);
         height: min(${PICKER_MAX_HEIGHT}px, calc(100vh - 150px));
         overflow-y: auto;
         overflow-x: hidden;
-        scrollbar-width: thin;
+        scrollbar-width: auto;
         overscroll-behavior: contain;
         position: relative;
         contain: strict;
@@ -558,6 +693,7 @@ function installStyles() {
       }
       .ruyi-picker-item {
         box-sizing: border-box;
+        background: var(--ruyi-content-bg);
         position: absolute;
         left: 4px;
         right: 4px;
@@ -573,8 +709,8 @@ function installStyles() {
       }
       .ruyi-picker-item:hover,
       .ruyi-picker-item.active {
-        background: #333;
-        border-color: #5a5a5a;
+        background: var(--ruyi-hover-bg);
+        border-color: var(--ruyi-border);
       }
       .ruyi-picker-thumb {
         box-sizing: border-box;
@@ -582,8 +718,8 @@ function installStyles() {
         aspect-ratio: 4 / 5;
         height: auto;
         object-fit: cover;
-        background: #171717;
-        border: 1px solid var(--border-color, #484848);
+        background: var(--ruyi-content-bg);
+        border: 1px solid var(--ruyi-border);
         border-radius: 5px;
       }
       .ruyi-picker-thumb.placeholder {
@@ -596,7 +732,7 @@ function installStyles() {
       }
       .ruyi-picker-info { min-width: 0; }
       .ruyi-picker-title {
-        color: var(--fg-color, #eee);
+        color: var(--ruyi-text);
         font-size: 13px;
         font-weight: 600;
         overflow: hidden;
@@ -605,7 +741,7 @@ function installStyles() {
       }
       .ruyi-picker-path {
         margin-top: 3px;
-        color: #aaa;
+        color: var(--ruyi-muted);
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
@@ -900,7 +1036,34 @@ function placePicker(picker, anchor) {
     picker.style.top = `${Math.max(12, top)}px`;
 }
 
-function openLoraPicker(anchor, catalog, selectedLora, onChoose) {
+function createNumberControl(input, getSteps) {
+    const control = make("span", "ruyi-number-control");
+    const decrease = make("button", "", "◀");
+    const increase = make("button", "", "▶");
+    decrease.type = increase.type = "button";
+    decrease.setAttribute("aria-label", `${input.getAttribute("aria-label") || ""} −`);
+    increase.setAttribute("aria-label", `${input.getAttribute("aria-label") || ""} +`);
+    let previousValue = input.value;
+    input.addEventListener("change", () => {
+        const value = Number(input.value);
+        if (!input.value.trim() || !Number.isFinite(value)) input.value = previousValue;
+        previousValue = input.value;
+    }, { capture: true });
+    const change = direction => {
+        const delta = direction * getSteps();
+        const value = Number(input.value);
+        if (!Number.isFinite(value)) return;
+        const next = Number((value + delta).toFixed(12));
+        input.value = String(Math.max(Number(input.min), Math.min(Number(input.max), next)));
+        input.dispatchEvent(new Event("change", { bubbles: true }));
+    };
+    decrease.onclick = event => { event.preventDefault(); change(-1); };
+    increase.onclick = event => { event.preventDefault(); change(1); };
+    control.append(decrease, input, increase);
+    return control;
+}
+
+function openLoraPicker(anchor, catalog, selectedLora, onChoose, settings, onSettingsChange) {
     activePickerCleanup?.();
 
     const picker = make("div", "ruyi-picker");
@@ -924,6 +1087,10 @@ function openLoraPicker(anchor, catalog, selectedLora, onChoose) {
     for (const value of modelValues) modelFilter.append(new Option(value || tr("unknown"), value || "Unknown"));
 
     searchWrap.append(search, folderFilter, modelFilter);
+    if (settings.pickerMode === "last") {
+        folderFilter.value = folderValues.includes(settings.lastFolder) ? settings.lastFolder : "";
+        modelFilter.value = modelValues.includes(settings.lastModel) ? settings.lastModel : "";
+    }
     picker.append(searchWrap);
 
     const pickerList = make("div", "ruyi-picker-list");
@@ -1126,8 +1293,14 @@ function openLoraPicker(anchor, catalog, selectedLora, onChoose) {
     pickerList.addEventListener("scroll", scheduleRenderWindow, { passive: true });
     search.addEventListener("input", applyFilters);
     search.addEventListener("keydown", onKey);
-    folderFilter.addEventListener("change", applyFilters);
-    modelFilter.addEventListener("change", applyFilters);
+    const onFilterChange = () => {
+        settings.lastFolder = folderFilter.value;
+        settings.lastModel = modelFilter.value;
+        onSettingsChange();
+        applyFilters();
+    };
+    folderFilter.addEventListener("change", onFilterChange);
+    modelFilter.addEventListener("change", onFilterChange);
 
     applyFilters();
     placePicker(picker, anchor);
@@ -1152,9 +1325,11 @@ function createRuYiLoraWidget(node, inputName) {
     panel.append(surface);
     const toolbar = make("div", "ruyi-toolbar");
     const addBtn = make("button", "", tr("addLora"));
+    const addIcon = make("span", "ruyi-add-icon", "✚"); addIcon.setAttribute("aria-hidden", "true");
+    addBtn.prepend(addIcon, document.createTextNode(" "));
     const toggleBtn = make("button", "", tr("toggleAll"));
     const refreshBtn = make("button", "", tr("refresh"));
-    const visibleCountWrap = make("label", "ruyi-visible-count");
+    const visibleCountWrap = make("div", "ruyi-visible-count");
     visibleCountWrap.title = tr("showCountTitle");
     const visiblePrefix = make("span", "", tr("showCountPrefix"));
     const visibleCountInput = document.createElement("input");
@@ -1168,11 +1343,110 @@ function createRuYiLoraWidget(node, inputName) {
     }
     let visibleLoraCount = Math.max(0, Math.min(99, Math.trunc(Number(node.properties.ruyi_visible_lora_count) || 0)));
     visibleCountInput.value = String(visibleLoraCount);
+    visibleCountInput.setAttribute("aria-label", tr("showCountPrefix"));
     const visibleSuffix = make("span", "", tr("showCountSuffix"));
-    visibleCountWrap.append(visiblePrefix, visibleCountInput, visibleSuffix);
+    visibleCountWrap.append(visiblePrefix, createNumberControl(visibleCountInput, () => 1), visibleSuffix);
     const filler = make("div", "");
-    toolbar.append(addBtn, toggleBtn, refreshBtn, visibleCountWrap, filler);
+    const settingsBtn = make("button", "", tr("settings"));
+    settingsBtn.setAttribute("aria-expanded", "false");
+    toolbar.append(addBtn, toggleBtn, refreshBtn, filler, settingsBtn);
     surface.append(toolbar);
+
+    let settings;
+    const restoreSettings = () => {
+        node.properties ??= {};
+        const saved = node.properties.ruyi_lora_settings || {};
+        settings = {
+            step: Number.isFinite(Number(saved.step ?? saved.increase)) && Number(saved.step ?? saved.increase) > 0 ? Number(saved.step ?? saved.increase) : 0.1,
+            pickerMode: saved.pickerMode === "last" ? "last" : "default",
+            lastFolder: saved.lastFolder || "",
+            lastModel: saved.lastModel || "",
+        };
+        node.properties.ruyi_lora_settings = settings;
+    };
+    restoreSettings();
+    const settingsPanel = make("div", "ruyi-settings");
+    settingsPanel.hidden = true;
+    const stepLabel = make("div", "ruyi-setting-field", tr("weightStep"));
+    const stepInput = document.createElement("input");
+    stepInput.type = "number";
+    stepInput.step = "0.01";
+    stepInput.min = "0.01";
+    stepInput.max = "100";
+    stepInput.value = String(settings.step);
+    stepInput.setAttribute("aria-label", tr("weightStep"));
+    stepInput.onchange = () => {
+        const value = Number(stepInput.value);
+        if (Number.isFinite(value) && value > 0) settings.step = value;
+        stepInput.value = String(settings.step);
+        app.graph?.setDirtyCanvas?.(true, true);
+    };
+    stepLabel.append(createNumberControl(stepInput, () => 0.01));
+    settingsPanel.append(visibleCountWrap, stepLabel);
+    const pickerModeLabel = make("div", "ruyi-setting-field", tr("pickerMode"));
+    const pickerModeButton = make("button", "ruyi-picker-mode");
+    pickerModeButton.type = "button";
+    pickerModeButton.setAttribute("aria-label", tr("pickerMode"));
+    pickerModeButton.setAttribute("aria-haspopup", "listbox");
+    pickerModeButton.setAttribute("aria-expanded", "false");
+    const syncPickerMode = () => {
+        pickerModeButton.textContent = tr(settings.pickerMode === "last" ? "pickerLast" : "pickerDefault");
+        pickerModeButton.dataset.value = settings.pickerMode;
+    };
+    syncPickerMode();
+    let settingsMenu = null;
+    const closeSettingsMenu = () => {
+        settingsMenu?.remove();
+        settingsMenu = null;
+        pickerModeButton.setAttribute("aria-expanded", "false");
+        document.removeEventListener("pointerdown", onSettingsPointer, true);
+        document.removeEventListener("keydown", onSettingsKey, true);
+        window.removeEventListener("resize", closeSettingsMenu);
+        window.removeEventListener("scroll", closeSettingsMenu, true);
+    };
+    const onSettingsPointer = event => {
+        if (!settingsMenu?.contains(event.target) && !pickerModeButton.contains(event.target)) closeSettingsMenu();
+    };
+    const onSettingsKey = event => {
+        if (event.key === "Escape") { closeSettingsMenu(); pickerModeButton.focus(); }
+    };
+    pickerModeButton.onclick = () => {
+        if (settingsMenu) { closeSettingsMenu(); return; }
+        const rect = pickerModeButton.getBoundingClientRect();
+        const scale = rect.width / pickerModeButton.offsetWidth;
+        settingsMenu = make("div", "ruyi-settings-menu");
+        settingsMenu.setAttribute("role", "listbox");
+        settingsMenu.style.width = `${rect.width}px`;
+        settingsMenu.style.fontSize = `${parseFloat(getComputedStyle(pickerModeButton).fontSize) * scale}px`;
+        settingsMenu.style.setProperty("--ruyi-menu-padding", `${8 * scale}px`);
+        for (const [value, key] of [["default", "pickerDefault"], ["last", "pickerLast"]]) {
+            const option = make("button", "ruyi-settings-option", tr(key));
+            option.type = "button";
+            option.dataset.value = value;
+            option.setAttribute("role", "option");
+            option.setAttribute("aria-selected", String(value === settings.pickerMode));
+            option.onclick = () => {
+                settings.pickerMode = value;
+                syncPickerMode();
+                closeSettingsMenu();
+                pickerModeButton.focus();
+                app.graph?.setDirtyCanvas?.(true, true);
+            };
+            settingsMenu.append(option);
+        }
+        document.body.append(settingsMenu);
+        settingsMenu.style.left = `${Math.max(0, Math.min(rect.left, window.innerWidth - rect.width))}px`;
+        const menuHeight = settingsMenu.getBoundingClientRect().height;
+        settingsMenu.style.top = `${rect.bottom + menuHeight > window.innerHeight ? Math.max(0, rect.top - menuHeight) : rect.bottom}px`;
+        pickerModeButton.setAttribute("aria-expanded", "true");
+        document.addEventListener("pointerdown", onSettingsPointer, true);
+        document.addEventListener("keydown", onSettingsKey, true);
+        window.addEventListener("resize", closeSettingsMenu);
+        window.addEventListener("scroll", closeSettingsMenu, true);
+    };
+    pickerModeLabel.append(pickerModeButton);
+    settingsPanel.append(pickerModeLabel);
+    surface.append(settingsPanel);
 
     const list = make("div", "ruyi-list");
     captureWheel(list);
@@ -1395,11 +1669,8 @@ function createRuYiLoraWidget(node, inputName) {
 
     const persist = () => {
         if (!widget) return;
-        widget.value = serializeState(state);
-        // Setting widget.value is enough for workflow serialization / prompt input.
-        // Avoid widget.callback here: on DOM widgets some frontend versions feed the
-        // value straight back through setValue(), causing a full card rebuild and a
-        // height re-fit even for a simple toggle/strength edit.
+        // getValue() serializes live state. Assigning widget.value would call
+        // setValue() and rebuild all cards, resetting the current scroll position.
         // State changes must not trigger node width recalculation. Renders that
         // actually change content height call measureAndSync() explicitly.
         app.graph?.setDirtyCanvas?.(true, true);
@@ -1407,6 +1678,7 @@ function createRuYiLoraWidget(node, inputName) {
 
     const render = async ({ fitMode = "preserve" } = {}) => {
         const serial = ++renderSerial;
+        const scrollTop = list.scrollTop;
         cardResizeObserver?.disconnect();
         list.replaceChildren();
 
@@ -1454,7 +1726,7 @@ function createRuYiLoraWidget(node, inputName) {
                     row._meta_rev = Date.now();
                     persist();
                     await render();
-                });
+                }, settings, () => app.graph?.setDirtyCanvas?.(true, true));
             };
             head.append(selectBtn);
             main.append(head);
@@ -1485,33 +1757,35 @@ function createRuYiLoraWidget(node, inputName) {
 
             const controls = make("div", "ruyi-controls");
 
-            const modelLabel = make("label", "", tr("strength"));
+            const modelLabel = make("div", "ruyi-strength-label", tr("strength"));
             const modelStrength = document.createElement("input");
             modelStrength.type = "number";
             modelStrength.step = "0.01";
             modelStrength.min = "-100";
             modelStrength.max = "100";
             modelStrength.value = String(row.strength_model);
+            modelStrength.setAttribute("aria-label", tr("strength"));
             modelStrength.onchange = () => {
                 row.strength_model = Number(modelStrength.value);
                 persist();
             };
-            modelLabel.append(modelStrength);
+            modelLabel.append(createNumberControl(modelStrength, () => settings.step));
             controls.append(modelLabel);
 
             if (!modelOnly) {
-                const clipLabel = make("label", "", tr("clipStrength"));
+                const clipLabel = make("div", "ruyi-strength-label", tr("clipStrength"));
                 const clipStrength = document.createElement("input");
                 clipStrength.type = "number";
                 clipStrength.step = "0.01";
                 clipStrength.min = "-100";
                 clipStrength.max = "100";
                 clipStrength.value = String(row.strength_clip);
+                clipStrength.setAttribute("aria-label", tr("clipStrength"));
                 clipStrength.onchange = () => {
                     row.strength_clip = Number(clipStrength.value);
                     persist();
                 };
-                clipLabel.append(clipStrength);
+                clipLabel.append(createNumberControl(clipStrength, () => settings.step));
                 controls.append(clipLabel);
             }
 
@@ -1536,7 +1810,7 @@ function createRuYiLoraWidget(node, inputName) {
 
             const upBtn = make("button", "", "↑");
             const downBtn = make("button", "", "↓");
-            const removeBtn = make("button", "danger", tr("remove"));
+            const removeBtn = make("button", "danger", `❌ ${tr("remove")}`);
             upBtn.title = tr("moveUp");
             downBtn.title = tr("moveDown");
             upBtn.disabled = index === 0;
@@ -1679,6 +1953,9 @@ function createRuYiLoraWidget(node, inputName) {
             preserveExistingHeight: fitMode !== "exact",
             waitForMount: fitMode === "restore" || !panel.isConnected,
         });
+        requestAnimationFrame(() => {
+            if (!disposed && serial === renderSerial) list.scrollTop = scrollTop;
+        });
     };
 
     widget = node.addDOMWidget(inputName, RUYI_WIDGET_TYPE, panel, {
@@ -1696,6 +1973,10 @@ function createRuYiLoraWidget(node, inputName) {
         getValue: () => serializeState(state),
         setValue: value => {
             state = normalizeState(value);
+            restoreSettings();
+            stepInput.value = String(settings.step);
+            closeSettingsMenu();
+            syncPickerMode();
             // Properties are restored by ComfyUI alongside widget values. Re-read the
             // per-node visible-count preference here so old workflows default to 3 and
             // saved RuYi nodes restore their own setting independently.
@@ -1720,6 +2001,13 @@ function createRuYiLoraWidget(node, inputName) {
         if (disposed) return;
         if (panel.isConnected) queueRestoreRender();
         else scheduleRenderOnRemount();
+    };
+
+    settingsBtn.onclick = () => {
+        closeSettingsMenu();
+        settingsPanel.hidden = !settingsPanel.hidden;
+        settingsBtn.setAttribute("aria-expanded", String(!settingsPanel.hidden));
+        applyListLimitAndFit({ preserveExistingHeight: false, waitForMount: !panel.isConnected });
     };
 
     visibleCountInput.onchange = () => {
@@ -1779,6 +2067,7 @@ function createRuYiLoraWidget(node, inputName) {
     render();
 
     widget.onRemove = () => {
+        closeSettingsMenu();
         disposed = true;
         layoutMeasureToken++;
         remountObserver?.disconnect();
@@ -1839,78 +2128,3 @@ app.registerExtension({
         });
     },
 });
-
-function createRuYiTextPreviewWidget(node) {
-    const wrap = document.createElement("div");
-    wrap.style.boxSizing = "border-box";
-    wrap.style.width = "100%";
-    wrap.style.height = "100%";
-    wrap.style.padding = "6px";
-
-    const area = document.createElement("textarea");
-    area.readOnly = true;
-    area.spellcheck = false;
-    area.placeholder = getComfyLocale() === "zh" ? "运行工作流后显示最终合并文本…" : "Final merged text appears after execution…";
-    area.style.boxSizing = "border-box";
-    area.style.width = "100%";
-    area.style.height = "100%";
-    area.style.minHeight = "180px";
-    area.style.resize = "none";
-    area.style.overflow = "auto";
-    area.style.border = "1px solid var(--border-color, #505050)";
-    area.style.borderRadius = "5px";
-    area.style.background = "var(--comfy-input-bg, #222)";
-    area.style.color = "var(--fg-color, #ddd)";
-    area.style.padding = "8px";
-    area.style.fontFamily = "ui-monospace, SFMono-Regular, Consolas, monospace";
-    area.style.fontSize = "12px";
-    area.style.lineHeight = "1.35";
-    wrap.append(area);
-
-    const widget = node.addDOMWidget("preview", "ruyi_text_preview", wrap, {
-        hideOnZoom: false,
-        getMinHeight: () => 200,
-        getHeight: () => 200,
-        onResize: () => {},
-    });
-    widget.serialize = false;
-
-    const setPreview = value => {
-        const text = Array.isArray(value) ? (value[0] ?? "") : (value ?? "");
-        area.value = String(text);
-        area.title = String(text);
-        node.setDirtyCanvas?.(true, true);
-        app.graph?.setDirtyCanvas?.(true, true);
-    };
-
-    const previousOnExecuted = node.onExecuted;
-    node.onExecuted = function(message) {
-        previousOnExecuted?.call(this, message);
-        if (message && Object.prototype.hasOwnProperty.call(message, "text")) {
-            setPreview(message.text);
-        }
-    };
-
-    return { widget, area };
-}
-
-app.registerExtension({
-    name: "RuYi-Nodes.TextPreview",
-
-    nodeCreated(node) {
-        if (node.comfyClass !== "RuYiTextPreview" && node.type !== "RuYiTextPreview") return;
-
-        const oldMin = Array.isArray(node.min_size) ? node.min_size : [0, 0];
-        node.min_size = [Math.max(420, Number(oldMin[0]) || 0), Math.max(270, Number(oldMin[1]) || 0)];
-
-        if ((node.size?.[0] || 0) < 420 || (node.size?.[1] || 0) < 270) {
-            node.setSize?.([
-                Math.max(420, node.size?.[0] || 420),
-                Math.max(270, node.size?.[1] || 270),
-            ]);
-        }
-
-        createRuYiTextPreviewWidget(node);
-    },
-});
-

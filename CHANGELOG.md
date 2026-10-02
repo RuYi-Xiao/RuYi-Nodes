@@ -2,6 +2,41 @@
 
 All notable user-facing changes to **RuYi-Nodes** will be documented in this file.
 
+## 0.2.0 - 2026-10-02
+
+### Added / 新增
+
+- **RuYi Prompt / RuYi 提示词**: independent positive/negative sections and CONDITIONING outputs, optional LoRA trigger input, search highlighting/navigation, local tag completion, CSV imports, offline spelling suggestions and a custom dictionary.
+- Prompt settings support font size and negative-panel visibility; sections can be named, reordered, collapsed, disabled and resized. Search and vocabulary-tag hit counts stay visible; vocabulary readiness/count live in settings.
+- **RuYi Empty Latent Image / RuYi 空Latent图像**: width/height swap, resolution-only presets with save/load/delete, 8/16/32/64 alignment and proportional scaling from a stable base. Defaults to 16-channel SD3/Flux; Anima single-frame and native 4-channel layouts are selectable.
+- Image Compare's enlarged view supports A/B selection and both comparison modes, with Escape/backdrop/close handling and state preservation.
+- Shared grayscale styling and twelve matched English/Chinese screenshots, including both LoRA variants and the picker. The opening README gallery now includes Prompt and Empty Latent.
+
+### Changed / 调整
+
+- LoRA weights and visible-count fields use centered numbers with shared-frame left/right arrows. A right-aligned Settings button holds visible count, unified weight step (default 0.1) and Initial/Remember-last picker behavior.
+- Resolution presets store dimensions only. Saving a different resolution adds a new entry rather than overwriting the selected preset; exact duplicates are reused.
+- Latent controls size themselves to their content, removing the fixed 330px panel and 500px minimum that left unnecessary bottom space.
+- Prompt and LoRA action buttons share their sizing, green add symbols and red delete crosses. Removed the redundant final-prompt preview area.
+- Documented explicit `%date:yyyy-MM-dd%` folder placeholders and their required percent delimiters.
+
+### Fixed / 修复
+
+- LoRA enable/trigger toggles retain the cards and scroll position; numeric arrow hover is limited to the hovered arrow. Picker chevrons, option typography and padding are consistent.
+- Prompt completion requires a continuous full fragment in names/translations or an exact alias, instead of dispersed-letter matches. Focus/caret/IME handling, candidate invalidation and scrolling no longer leave stale or intermittently missing suggestions.
+- Spelling checks debounce while typing and retain unchanged chips to prevent flicker. Typo and search navigation reveal the selected occurrence; spelling rows have balanced spacing and a clear label.
+- Prompt resizing retains its bottom padding; paragraph scrollbar width and cursor, section sizing, font layers and serialized settings remain consistent.
+
+### Removed / 移除
+
+- Removed the legacy **RuYi text-preview / RuYi 文本监视** testing node. Old workflows that use it should select another STRING display utility.
+
+### Validation / 验证
+
+- Python tests cover prompt composition/CLIP encoding, latent tensor layouts and Image Compare metadata/assets.
+- JavaScript and browser fixtures cover vocabulary/completion, prompt editing/search/scroll behavior, LoRA controls and picker persistence, latent preset/scaling behavior, and enlarged comparison interactions.
+- Refreshed bilingual screenshots in an isolated CPU ComfyUI instance with local example images; no image-generation model is used for the comparison demonstration.
+
 ## 0.1.22 - 2026-09-02
 
 ### Fixed

@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="zh"><meta charset="utf-8"><title>RuYi 图像对比窗口测试</title>
+<style>
+body {margin: 20px; color:#ddd; background:#272727; font:14px system-ui}
+#nodes {display:flex; gap:20px; flex-wrap:wrap}
+.node {width:740px; height:790px; margin-bottom:25px}
+button {cursor:pointer} #results {white-space:pre-wrap; line-height:1.7}
+</style>
+<h1>RuYi 图像对比窗口</h1><button id="run">运行回归测试</button>
+<pre id="results">正在初始化…</pre><div id="nodes"></div>
+<script type="module">
+import {app} from '/scripts/app.js';
+import '/extensions/RuYi/ruyi_image_compare.js';
+const items = ['a', 'b', 'c'].map((letter, i) => ({key:`${i+1}:0`, input:i+1, frame:0, frame_count:1, width:960, height:640, size_bytes:1024, preview:{filename:`${letter}.svg`, type:'temp', subfolder:''}, thumb:{filename:`${letter}.svg`, type:'temp', subfolder:''}}));
+class CompareNode {
+    constructor() {this.properties={}; this.widgets=[]; this.graph=app.graph; this.size=[740,790]; this.comfyClass='RuYiImageCompare';}
+    addDOMWidget(name,type,element,options) {this.element=element; const widget={name,type,element,options}; this.widgets.push(widget); return widget;}
+    setSize(size) {this.size=size;} setDirtyCanvas() {}
+}
+await app.extensions[0].beforeRegisterNodeDef(CompareNode,{name:'RuYiImageCompare'});
+function createNode(populated=true) {
+    const node=new CompareNode(); node.onNodeCreated();
+    const host=document.createElement('section'); host.className='node'; host.append(node.element); document.querySelector('#nodes').append(host);
+    node.host=host; app.graph._nodes.push(node);
+    if(populated) node.onExecuted({ruyi_data:[JSON.stringify({compare_items:items,autosaved:[]})]});
+    return node;
+}
+function removeNode(node) {node.onRemoved(); node.host.remove(); app.graph._nodes=app.graph._nodes.filter(n=>n!==node);}
+const first=createNode(), second=createNode();
+window.compareHarness={first,second,createNode,removeNode,items};
+const output=document.querySelector('#results'); output.textContent='就绪，可点击节点图片区右下角的放大按钮。';
+const assert=(ok,message)=>{if(!ok) throw new Error(message);};
+const settle=()=>new Promise(resolve=>setTimeout(resolve,100));
+const zoom=node=>node.element.querySelector('button[aria-label="放大图像对比"]');
+const dialog=()=>document.querySelector('[role="dialog"][aria-label="放大图像对比"]');
+const stage=modal=>modal.querySelector('[data-capture-wheel]');
+window.runCompareTests=async()=>{
+    const results=[];
+    dialog()?.querySelector('button[aria-label="关闭"]')?.click();
+    for (const node of [first,second]) {
+        node.properties.ruyi_image_compare={mode:'wipe',aKey:'1:0',bKey:'2:0',toggleSide:'A'};
+        node.onConfigure({properties:node.properties});
+    }
+    await settle();
+    async function test(name, fn) {
+        try {await fn(); results.push({name,pass:true});}
+        catch(error) {results.push({name,pass:false,error:error.message});}
+        output.textContent=results.map(r=>`${r.pass?'PASS':'FAIL'} ${r.name}${r.error?' — '+r.error:''}`).join('\n');
+    }
+    await test('空输入禁用放大',async()=>{const empty=createNode(false); try {assert(zoom(empty)?.disabled,'空输入放大按钮应存在且禁用');} finally {removeNode(empty);}});
+    await test('放大按钮打开大屏、关闭恢复位置和焦点',async()=>{
+        const button=zoom(first); assert(button,'Missing magnifier-plus zoom button'); button.focus(); button.click(); await settle();
+        const modal=dialog(); assert(modal,'点击应打开对比窗口'); assert(stage(modal).getBoundingClientRect().width>first.element.getBoundingClientRect().width,'窗口应比节点图片区更宽');
+        assert(modal.querySelectorAll('select').length===2,'窗口保留 A/B 选择'); assert(!modal.querySelector('input[type=checkbox]'),'保存列表应留在节点内');
+        assert(stage(modal).querySelectorAll('img').length===2,'窗口显示真实对比图像');
+        const close=modal.querySelector('button[aria-label="关闭"]');
+        document.dispatchEvent(new KeyboardEvent('keydown',{key:'Tab',shiftKey:true,bubbles:true,cancelable:true}));
+        assert(document.activeElement===modal.querySelectorAll('button')[1],'Shift+Tab 将焦点从关闭按钮移至末尾');
+        document.dispatchEvent(new KeyboardEvent('keydown',{key:'Tab',bubbles:true,cancelable:true}));
+        assert(document.activeElement===close,'Tab 将焦点从末尾移至关闭按钮');
+        modal.querySelector('button[aria-label="关闭"]').click(); assert(!dialog(),'关闭应移除窗口'); assert(first.element.contains(button),'放大按钮恢复节点位置'); assert(document.activeElement===button,'关闭恢复焦点');
+    });
+    await test('窗口内选择、滑动、点击模式与关闭后的状态保留',async()=>{
+        zoom(first).click(); await settle(); const modal=dialog(); assert(modal,'需要窗口');
+        const [a,b]=modal.querySelectorAll('select'); a.value='3:0'; a.dispatchEvent(new Event('change')); await settle();
+        assert(first.ruyiCompareWidget.state.aKey==='3:0','A 选择改变实际节点状态');
+        b.value='1:0'; b.dispatchEvent(new Event('change')); await settle(); assert(first.ruyiCompareWidget.state.bKey==='1:0','B 选择改变实际节点状态');
+        const area=stage(modal),rect=area.getBoundingClientRect();
+        area.dispatchEvent(new PointerEvent('pointerdown',{button:0,clientX:rect.left+rect.width*.25,bubbles:true}));
+        area.dispatchEvent(new PointerEvent('pointermove',{clientX:rect.left+rect.width*.75,bubbles:true}));
+        assert(Math.abs(first.ruyiCompareWidget.split-.75)<.01,'滑动应更新分隔位置');
+        [...modal.querySelectorAll('button')].find(button=>button.textContent.startsWith('对比方式')).click(); await settle();
+        assert(first.ruyiCompareWidget.state.mode==='toggle','切换到点击模式'); area.dispatchEvent(new PointerEvent('pointerdown',{button:0,bubbles:true})); await settle();
+        assert(first.ruyiCompareWidget.state.toggleSide==='B','点击切换显示 B'); assert(area.querySelector('img')?.src.includes('a.svg'),'B 对应所选的 Fixture A');
+        modal.querySelector('button[aria-label="关闭"]').click(); assert(!dialog(),'应关闭'); assert(first.ruyiCompareWidget.state.aKey==='3:0'&&first.ruyiCompareWidget.state.mode==='toggle','关闭应保留选择和模式');
+        assert(zoom(first),'预览重新渲染后仍保留按钮');
+    });
+    await test('两个节点隔离，Escape 和遮罩关闭',async()=>{
+        const previous=JSON.stringify(first.ruyiCompareWidget.state); zoom(second).click(); await settle(); const modal=dialog(); assert(modal,'第二节点打开窗口');
+        const a=modal.querySelector('select'); a.value='3:0'; a.dispatchEvent(new Event('change')); await settle(); assert(JSON.stringify(first.ruyiCompareWidget.state)===previous,'第二节点操作不能改变第一节点');
+        document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true})); assert(!dialog(),'Escape 关闭');
+        zoom(second).click(); const overlay=dialog().parentElement; overlay.click(); assert(!dialog(),'点击遮罩关闭');
+    });
+    await test('窗口打开时删除节点清理窗口和缓存',async()=>{
+        const node=createNode(); await settle(); zoom(node).click(); await settle(); assert(dialog(),'需要窗口'); removeNode(node);
+        assert(!dialog(),'删除节点应移除窗口'); assert(node.ruyiCompareWidget.fullCache.size===0,'删除应释放缓存'); document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
+    });
+    window.compareTestResults=results; return results;
+};
+document.querySelector('#run').addEventListener('click',window.runCompareTests);
+</script></html>

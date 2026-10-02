@@ -2,38 +2,37 @@
 
 **[English](#english) | [简体中文](#简体中文)**
 
-A lightweight collection of practical custom nodes for ComfyUI.  
-面向 ComfyUI 的轻量实用自定义节点合集。
+Practical ComfyUI nodes for visual LoRA loading, prompt editing, empty latent presets and image comparison/saving.<br>
+面向 ComfyUI 的实用节点：可视化 LoRA 加载、提示词编辑、空 Latent 分辨率管理、图像对比与保存。
+
+## Node gallery / 节点演示
+
+The English and Chinese screenshots for each example use the same dimensions and sample content. Comparison images are local geometric examples, not generated model results.<br>
+每组中英文截图采用相同尺寸与示例内容。图像对比使用本地几何示例图，不代表模型生成效果。
 
 <table>
+<tr><th width="50%">English</th><th width="50%">简体中文</th></tr>
+<tr><td colspan="2" align="center"><h3>Visual Multi-LoRA Loader / 可视化多 LoRA 加载器</h3>Model-only variant · 仅模型版</td></tr>
 <tr>
-<td width="50%" valign="top">
-<h3 align="center">Visual Multi-LoRA Loader<br>可视化 Multi-LoRA 加载器</h3>
-<p align="center"><img src="docs/images/en-multi-lora-loader.jpg" alt="RuYi Multi-LoRA Loader" width="100%"></p>
-<ul>
-<li>Manage multiple LoRAs in one node / 单节点管理多个 LoRA</li>
-<li>Preview covers, metadata and trigger words / 封面、元数据与触发词可视化</li>
-<li>Independent strengths, enable switches and ordering / 独立权重、开关与排序</li>
-<li>MODEL+CLIP and model-only variants / 支持完整与仅模型两种加载器</li>
-</ul>
-</td>
-<td width="50%" valign="top">
-<h3 align="center">Image Compare & Save<br>图像对比与保存</h3>
-<p align="center"><img src="docs/images/en-image-compare.jpg" alt="RuYi Image Compare" width="100%"></p>
-<ul>
-<li>Dynamic multi-image A/B comparison / 动态多图 A/B 对比</li>
-<li>Wipe and click comparison modes / 滑动与点击切换模式</li>
-<li>Per-image naming, auto-save and manual save / 独立命名、自动保存与手动保存</li>
-<li>Media Assets integration + workflow PNG metadata / 媒体资产集成与工作流 PNG 元数据</li>
-</ul>
-</td>
+<td valign="top"><img src="docs/images/en-multi-lora-loader.jpg" alt="English model-only LoRA loader" width="100%"></td>
+<td valign="top"><img src="docs/images/zh-multi-lora-loader.jpg" alt="中文仅模型 LoRA 加载器" width="100%"></td>
+</tr>
+<tr><td colspan="2" align="center"><h3>RuYi Prompt / RuYi 提示词</h3>Sections, search, local completion and positive/negative conditioning · 分段、搜索、本地联想与正负条件输出</td></tr>
+<tr>
+<td valign="top"><img src="docs/images/en-prompt.jpg" alt="English prompt editor" width="100%"></td>
+<td valign="top"><img src="docs/images/zh-prompt.jpg" alt="中文提示词节点" width="100%"></td>
+</tr>
+<tr><td colspan="2" align="center"><h3>RuYi Empty Latent Image / RuYi 空Latent图像</h3>Swap dimensions, presets, alignment and proportional scaling · 交换宽高、预设、对齐与等比缩放</td></tr>
+<tr>
+<td valign="top"><img src="docs/images/en-empty-latent.jpg" alt="English empty latent node" width="100%"></td>
+<td valign="top"><img src="docs/images/zh-empty-latent.jpg" alt="中文空 Latent 节点" width="100%"></td>
+</tr>
+<tr><td colspan="2" align="center"><h3>Image Compare &amp; Save / 图像对比与保存</h3>Dynamic A/B comparison, enlarged view and independent save rules · 动态 A/B 对比、放大查看与独立保存规则</td></tr>
+<tr>
+<td valign="top"><img src="docs/images/en-image-compare.jpg" alt="English image comparison node" width="100%"></td>
+<td valign="top"><img src="docs/images/zh-image-compare.jpg" alt="中文图像对比节点" width="100%"></td>
 </tr>
 </table>
-
-> RuYi-Nodes currently focuses on two core workflows: **visual Multi-LoRA management** and **image comparison/saving**. A lightweight STRING preview node is also included as a supporting utility.  
-> RuYi-Nodes 当前优先提供两类核心能力：**可视化 Multi-LoRA 管理**与**图像对比/保存**，并附带轻量的 STRING 文本监视工具。
-
----
 
 ## English
 
@@ -41,37 +40,32 @@ A lightweight collection of practical custom nodes for ComfyUI.
 
 | Node | Input | Output | Purpose |
 | --- | --- | --- | --- |
-| **RuYi multi-Lora-loader** | `MODEL`, `CLIP` | `MODEL`, `CLIP`, `trigger_words` | Load and visually manage multiple LoRAs with independent MODEL / CLIP strengths. |
-| **RuYi multi-Lora-loader (model only)** | `MODEL` | `MODEL`, `trigger_words` | Load multiple LoRAs into MODEL only; useful for Krea2 / Flux-style workflows. |
-| **RuYi image-compare** | Dynamic `IMAGE` inputs | — | Compare any two connected images, inspect them and save them with independent rules. |
-| **RuYi text-preview** | `STRING` | `STRING` | Display the complete input STRING after execution and pass it through unchanged. |
+| **RuYi multi-Lora-loader** | `MODEL`, `CLIP` | `MODEL`, `CLIP`, `trigger_words` | Manage multiple LoRAs with independent MODEL and CLIP strengths. |
+| **RuYi multi-Lora-loader (model only)** | `MODEL` | `MODEL`, `trigger_words` | Apply LoRAs to MODEL only. |
+| **RuYi Prompt** | `CLIP`, optional trigger-word `STRING` | Positive and negative `CONDITIONING` | Edit sections and encode both prompts for a sampler. |
+| **RuYi Empty Latent Image** | Width, height, batch, alignment, latent type | `LATENT` | Swap dimensions, manage presets and scale proportionally. |
+| **RuYi image-compare** | Dynamic `IMAGE` inputs | — | Compare connected images and save them independently. |
 
 ### Visual Multi-LoRA Loader
 
-The RuYi Multi-LoRA loaders are designed to keep large LoRA stacks readable and manageable inside a single node.
+- Add, remove, reorder and enable/disable LoRAs independently. Switching a LoRA or its trigger output preserves the list position.
+- Use the full loader for separate MODEL/CLIP weights; use the model-only variant when your workflow applies LoRAs only to MODEL/UNET.
+- Centered weight fields have left/right arrows. **Settings → Weight step** sets their adjustment amount, initially `0.1`.
+- **Settings → Show N LoRAs** controls the viewport (`3` by default; `0` means unlimited).
+- The searchable picker has separate folder and base-model filters. **Open LoRA picker with → Initial / Remember last** controls whether those filters reset or retain the last visit, including combinations with no matching entries.
+- Enabled entries with **Output trigger** contribute to the deduplicated `trigger_words` STRING output. It can connect directly to RuYi Prompt's optional input; leaving it unconnected does not affect LoRA loading.
+- Covers, friendly model names, trigger words, usage tips, notes, source links and recommended strengths are read from available metadata.
 
-Key features:
+<table>
+<tr><th width="50%">Full loader · English</th><th width="50%">完整加载器 · 中文</th></tr>
+<tr><td><img src="docs/images/en-multi-lora-loader-full.jpg" alt="Full LoRA loader, English" width="100%"></td><td><img src="docs/images/zh-multi-lora-loader-full.jpg" alt="完整 LoRA 加载器，中文" width="100%"></td></tr>
+<tr><th>LoRA picker · English</th><th>LoRA 选择界面 · 中文</th></tr>
+<tr><td><img src="docs/images/en-lora-picker.jpg" alt="LoRA picker, English" width="100%"></td><td><img src="docs/images/zh-lora-picker.jpg" alt="LoRA 选择界面，中文" width="100%"></td></tr>
+</table>
 
-- Add, remove, reorder and enable/disable LoRAs independently.
-- Full loader supports independent **MODEL** and **CLIP** strengths.
-- Model-only loader is intended for workflows where LoRAs are applied only to MODEL / UNET.
-- In-node preview thumbnails when metadata/preview information is available.
-- Searchable LoRA picker with separate **Folder** and **Base model** filters.
-- Per-node **Show N LoRAs** viewport control (`3` by default, `0` = unlimited).
-- Optional `trigger_words` STRING output with de-duplication across enabled LoRAs.
-- Per-LoRA **Output trigger** toggle determines whether that LoRA contributes trigger words.
-- Metadata-aware display for usage tips, notes, source links, base model and recommended weights.
-- English and Simplified Chinese UI.
+#### Metadata companion
 
-#### Recommended companion: ComfyUI-Lora-Manager
-
-RuYi-Nodes works independently for normal multi-LoRA loading.
-
-For preview images, trigger words, base-model information, recommended weights, notes, usage tips and source links, **[ComfyUI-Lora-Manager](https://github.com/willmiao/ComfyUI-Lora-Manager)** is recommended. RuYi-Nodes reads the `.metadata.json` sidecar files generated by LoRA Manager.
-
-> **Note:** LoRA Manager is only recommended for metadata-aware LoRA features. **RuYi image-compare does not depend on LoRA Manager.**
-
-Expected sidecar layout:
+Normal LoRA loading works independently. For rich previews and metadata, [ComfyUI-Lora-Manager](https://github.com/willmiao/ComfyUI-Lora-Manager) is recommended. RuYi reads its sidecars:
 
 ```text
 my_lora.safetensors
@@ -79,185 +73,87 @@ my_lora.metadata.json
 my_lora.jpeg
 ```
 
-![LoRA metadata sidecar example](docs/images/lora-info.jpg)
+![Metadata sidecar example](docs/images/lora-info.jpg)
 
-If metadata is unavailable, normal LoRA loading still works.
+The prompt, latent and comparison nodes do not depend on LoRA Manager.
 
-#### LoRA Picker
+### RuYi Prompt
 
-Search and filter LoRAs by **Folder** or **Base model**, with previews when available.
-
-![RuYi LoRA Picker](docs/images/en-lora-picker.jpg)
-
-#### Trigger-word output
-
-Both LoRA loaders expose an optional `trigger_words` STRING output.
-
-For each enabled LoRA, **Output trigger** determines whether its trigger words are included. Trigger words from selected entries are combined and de-duplicated.
-
-Leaving `trigger_words` unconnected is valid and does not affect LoRA loading.
-
-A common prompt workflow is:
+Connect the model's compatible CLIP encoder. The two outputs connect directly to a sampler's positive and negative inputs:
 
 ```text
-Main prompt STRING ───────────┐
-                              ├─ STRING concatenate / combine ──> final prompt STRING
-RuYi trigger_words STRING ───┘
-                                                    │
-                                                    └─> RuYi text-preview
+CLIP ─────────────────────────> RuYi Prompt ── positive ──> Sampler
+RuYi LoRA trigger_words STRING ─>             └─ negative ──> Sampler
 ```
 
-#### Krea2 / model-only workflow
+- Positive and negative sides each support named sections, ordering, folding, enable switches and deletion. Drag a section's bottom bar to change its display height.
+- Enabled sections are joined in order. LoRA trigger words are appended to the positive prompt during execution.
+- Search highlights all matches; the arrows select and reveal the previous/next match. The main toolbar shows search hits and complete vocabulary-tag hits in enabled text.
+- Settings can hide the negative panel without deleting its text. While hidden, the negative output encodes an empty prompt; a sampler may still require that connection.
+- Local completion searches contiguous tag names/translations, ignoring case and treating spaces and underscores equivalently. Aliases require an exact match and are identified in the suggestion. Dispersed letters and single-letter queries do not produce loose matches.
+- Completion rechecks after about 120ms of inactivity, focus or caret changes. Use Up/Down to select, Enter/Tab to insert, Escape to dismiss. It pauses during IME composition and preserves surrounding prose when inserting.
+- Offline English spelling checks run after about 500ms of inactivity. Existing unchanged typo chips stay in place while typing. Click a chip under **Spelling errors:** to locate the word, replace it, ignore it or add it to the custom dictionary. Known tags and available LoRA trigger words are exempt; suggestions can still require manual judgment.
+- Settings include prompt font size (`10–32px`, default `13px`), underscore mode, vocabulary sources, CSV import and custom words. Vocabulary readiness and record count are shown in settings.
+- The bundled vocabulary has **508,152 entries**, merging local Danbooru exports, Chinese translations and a public snapshot. See [vocabulary provenance and rebuild instructions](data/prompt/README.md), [Typo.js license](js/prompt/vendor/TYPO-LICENSE.txt) and [dictionary licenses](js/prompt/vendor/EN-LICENSE.txt).
+- Imported CSVs live in this browser's IndexedDB; custom words, section heights, font size and prompt settings travel with the workflow. Re-import CSVs when moving to another browser. Runtime features use local resources and do not automatically fetch updates.
 
-For Krea2-style workflows where LoRAs are applied to MODEL only, use:
+Sections organize and concatenate text. They do **not** implement spatial regional conditioning. The node requires CLIP and outputs conditions rather than a plain STRING.
 
-```text
-MODEL / UNET
-    │
-    ▼
-RuYi multi-Lora-loader (model only)
-    │
-    ▼
-MODEL
-```
+### RuYi Empty Latent Image
 
-Keep the text encoder / CLIP path separate unless your workflow specifically requires otherwise.
+- **Swap width / height** switches orientation while retaining batch and latent type.
+- **Resolution preset** stores only dimensions. **Save preset** always adds the current resolution or selects its existing identical entry; it never overwrites a different selected resolution. **Load** and **Delete** operate on the selected preset. Presets are shared in this browser's local storage.
+- **Resolution alignment** selects multiples of `8`, `16`, `32` or `64`, initially `16`. Manual dimension changes, preset loading, scaling and execution round to the nearest chosen multiple.
+- **Proportional scale** applies a percentage to a stable base. Arrows adjust it by 10 percentage points. Manual width/height edits and preset loading reset the base; **Use current as base** also resets it. Rounding can slightly change the aspect ratio. At the maximum size, both sides are limited together.
+- **Latent type** controls the tensor layout: `SD3 / Flux (16)` uses 16 channels; `Anima (16)` adds a single-frame dimension; `SD1 / SDXL (4)` uses the native 4-channel image layout. The default is 16-channel SD3/Flux. Choose the layout expected by the model.
+- Alignment and latent type are independent: alignment controls the image dimensions, while type controls channels/layout. All these layouts use an 8× spatial downscale; choosing alignment 16 does not make the latent 16 channels.
+- Width/height range: `16–16384`; batch: `1–4096`. Connected width/height inputs disable local resolution actions; adjust them upstream.
+- Scale base travels with the workflow. Controls fit their actual content height in either language, without a reserved blank status area.
 
 ### Image Compare & Save
 
-**RuYi image-compare** is a visual terminal node for comparing multiple image outputs without repeatedly rewiring a two-image compare node.
+1. Connect IMAGE outputs. An additional input appears as connections grow.
+2. Select any two candidates with the **A** and **B** dropdowns.
+3. **Wipe** follows horizontal pointer movement; **Click** switches between A and B.
+4. Click the **magnifier with a plus** at the preview's bottom right to open the enlarged comparison. A/B selection, wipe/click mode and comparison interactions remain available. Escape, the close button or clicking the backdrop closes it; the chosen state remains in the node.
+5. Each candidate supports its own display name, save-name/path template, auto-save toggle and manual save button. Resolution and PNG file size are displayed below its fields.
 
-![RuYi Image Compare](docs/images/en-image-compare.jpg)
-
-#### Comparison
-
-1. Connect one or more IMAGE outputs. A new IMAGE input is added automatically as connections grow.
-2. Use the **A** and **B** dropdowns to select any two connected images.
-3. Choose a comparison mode:
-   - **Compare mode: Wipe** — move the pointer horizontally over the preview to change the split position.
-   - **Compare mode: Click** — click the preview to switch between A and B.
-4. The image list below the preview handles naming, information and saving; A/B selection remains in the top dropdowns.
-
-Each image entry shows:
-
-- Preview thumbnail.
-- **Display name** used inside the node and A/B selectors.
-- Independent **Save name** / path template.
-- Resolution and PNG file size.
-- Per-image **Auto save** toggle.
-- Per-image **Save** button.
-
-Display names and save names are independent. For example, an image may display as `Second pass` while being saved with a different filename rule.
-
-#### Media Assets and workflow metadata
-
-Image Compare outputs are exposed through ComfyUI's standard image-output channel, so generated comparison candidates appear in **Media Assets → Generated** and task/output history.
-
-Media Asset PNGs are kept separate from the node-local A/B preview cache. Re-running the same Image Compare node can therefore replace its previous Compare previews without invalidating earlier Media Assets/history entries; those asset copies remain standard ComfyUI temporary assets and follow ComfyUI's own lifecycle.
-
-The redundant native image preview is suppressed inside the node itself, leaving the custom A/B comparison interface as the primary preview.
-
-PNG previews/saves preserve ComfyUI prompt/workflow metadata when metadata is enabled. A saved PNG can therefore be dragged back into ComfyUI to restore its workflow and generation information.
-
-#### Save / Auto save
-
-If **Save name** does not contain an explicit folder, images are saved under:
-
-```text
-ComfyUI/output/RuYi-Compare/
-```
-
-Default save-name template:
+Without an explicit folder, saves go under `ComfyUI/output/RuYi-Compare/`. The default template is:
 
 ```text
 %display_name-date:yyyy-MM-dd_HHmmss%
 ```
 
-RuYi filename variables:
+Available fields: `%display_name%`, `%save_name%`, `%index%`, `%input%`, `%frame%` and `%date:yyyy-MM-dd_HHmmss%`. RuYi's combined default template remains supported. Date patterns also work in folder components:
 
 ```text
-User fields:
-%display_name%   %save_name%
-
-Auto-generated:
-%index%   %input%   %frame%   %date:yyyy-MM-dd_HHmmss%
+%date:yyyy-MM-dd%/%display_name-date:yyyy-MM-dd_HHmmss%
+D:\AI\Output\%date:yyyy-MM-dd%\%display_name-date:yyyy-MM-dd_HHmmss%
 ```
 
-Relative subfolder example:
+Date placeholders must include the surrounding percent signs (`%date:...%`); bare `date:...` is treated as literal text and its colon is sanitized. Relative folders stay under `RuYi-Compare`; absolute Windows paths save directly to that location. Existing names receive numeric suffixes rather than being overwritten.
 
-```text
-Compare/%display_name-date:yyyy-MM-dd_HHmmss%
-```
+Right-click a thumbnail for **Save as...** or **Copy image** using the full-resolution source. These are separate from **Save**, which follows the configured path. PNG saves retain prompt/workflow metadata when enabled and can restore a workflow when dragged into ComfyUI.
 
-which saves under:
+Comparison previews are registered in Media Assets/history. Their asset copies are separate from the node's A/B cache, so re-running a node replaces its comparison cache without invalidating earlier asset/history entries. ComfyUI manages those standard temporary assets. The redundant native in-node preview is suppressed.
 
-```text
-ComfyUI/output/RuYi-Compare/Compare/
-```
-
-Absolute Windows path example:
-
-```text
-C:\YourFolder\%display_name-date:yyyy-MM-dd_HHmmss%
-```
-
-Repeated filenames are protected from overwrite by adding a numeric suffix.
-
-When an input image actually changes after a new execution, the previous save-status message for that image is cleared automatically.
-
-#### Thumbnail context menu: full-resolution image actions
-
-Right-click a candidate thumbnail for:
-
-- **Save as...** — choose a destination using the system/browser save flow and save the **full-resolution source image**.
-- **Copy image** — copy the **full-resolution source image** to the clipboard.
-
-These actions are separate from the RuYi **Save** button: **Save** follows the per-image Save-name/path template, while **Save as...** is an interactive system save operation.
-
-### Installation
-
-#### Option A — Git clone
-
-Open a terminal in `ComfyUI/custom_nodes` and run:
+### Installation and updates
 
 ```bash
+cd ComfyUI/custom_nodes
 git clone https://github.com/RuYi-Xiao/RuYi-Nodes.git
 ```
 
-Restart ComfyUI after installation.
-
-To update later:
+For an existing installation:
 
 ```bash
-cd RuYi-Nodes
+cd ComfyUI/custom_nodes/RuYi-Nodes
 git pull
 ```
 
-#### Option B — Manual ZIP
+Or extract the GitHub ZIP into `custom_nodes/RuYi-Nodes`, with `__init__.py` directly inside that folder. Restart ComfyUI after installation or Python-node updates; use Ctrl+F5 for frontend cache refresh.
 
-1. Download the repository ZIP from GitHub.
-2. Extract it into `ComfyUI/custom_nodes`.
-3. Make sure the final directory is named `RuYi-Nodes` and contains `__init__.py` directly inside it.
-4. Restart ComfyUI.
-
-Search for:
-
-```text
-RuYi multi-Lora-loader
-RuYi multi-Lora-loader (model only)
-RuYi image-compare
-RuYi text-preview
-```
-
-### Changelog
-
-See [CHANGELOG.md](CHANGELOG.md) for version history.
-
-### License
-
-RuYi-Nodes is released under the [MIT License](LICENSE).
-
----
+Search for the node names listed above. The former **RuYi text-preview** testing node has been removed; replace it in old workflows with a suitable STRING display utility.
 
 ## 简体中文
 
@@ -265,218 +161,97 @@ RuYi-Nodes is released under the [MIT License](LICENSE).
 
 | 节点 | 输入 | 输出 | 用途 |
 | --- | --- | --- | --- |
-| **RuYi 多 LoRA 加载器** | `MODEL`、`CLIP` | `MODEL`、`CLIP`、`trigger_words` | 在一个节点中可视化管理多个 LoRA，并分别控制 MODEL / CLIP 权重。 |
-| **RuYi 多 LoRA 加载器（仅模型）** | `MODEL` | `MODEL`、`trigger_words` | 只向 MODEL 加载多个 LoRA，适合 Krea2 / Flux 一类仅模型 LoRA 工作流。 |
-| **RuYi 图像对比** | 动态 `IMAGE` 输入 | — | 从多个输入中选择任意两张进行 A/B 对比、检查与独立保存。 |
-| **RuYi 文本监视** | `STRING` | `STRING` | 执行后显示完整输入文本，并将 STRING 原样继续输出。 |
+| **RuYi 多 LoRA 加载器** | `MODEL`、`CLIP` | `MODEL`、`CLIP`、`trigger_words` | 管理多个 LoRA，分别调整 MODEL 与 CLIP 权重。 |
+| **RuYi 多 LoRA 加载器（仅模型）** | `MODEL` | `MODEL`、`trigger_words` | 只向模型加载 LoRA。 |
+| **RuYi 提示词** | `CLIP`、可选触发词 `STRING` | 正面与负面 `CONDITIONING` | 分段编辑提示词并编码为采样条件。 |
+| **RuYi 空Latent图像** | 宽高、批次、对齐、Latent 类型 | `LATENT` | 交换宽高、管理预设、等比缩放。 |
+| **RuYi 图像对比** | 动态 `IMAGE` 输入 | — | 选择任意两张对比，并独立保存。 |
 
-### 可视化 Multi-LoRA 加载器
+### 可视化多 LoRA 加载器
 
-RuYi Multi-LoRA 加载器的目标是在一个节点中保持较大的 LoRA 堆栈仍然清晰、可管理。
+- 独立添加、删除、排序和开关 LoRA；切换开关或触发词输出时保持列表滚动位置。
+- 完整版分别调整 MODEL / CLIP 权重；仅模型版用于只向 MODEL / UNET 应用 LoRA 的工作流。
+- 权重数值居中，使用左右箭头调整。设置中的 **权重增减幅度** 默认为 `0.1`。
+- **显示 N 个 LoRA** 已移入设置，默认 `3`，`0` 表示不限制列表显示数量。
+- LoRA 选择界面分别筛选文件夹与基础模型。**初始 / 记忆上次** 决定重新打开时是否保留筛选组合，即使该组合没有匹配项也会保留。
+- 已启用且勾选 **输出触发词** 的 LoRA 会合并去重后输出 STRING，可直接接入 RuYi 提示词。未连接此输出不影响加载。
+- 支持读取封面、模型名、触发词、使用提示、备注、发布页链接和推荐权重。
 
-主要功能：
+普通 LoRA 加载可独立使用。丰富资料推荐配合 [ComfyUI-Lora-Manager](https://github.com/willmiao/ComfyUI-Lora-Manager)，读取同名 `.metadata.json` 与预览图片。完整加载器和选择界面的中英文对照图见上方英文部分。提示词、Latent 与图像对比节点不依赖 LoRA Manager。
 
-- 独立添加、删除、排序、启用/停用每个 LoRA。
-- 完整版可分别设置 **MODEL** 与 **CLIP** 权重。
-- **仅模型**版本适合 LoRA 只应用到 MODEL / UNET 的工作流。
-- 可用时直接在节点中显示 LoRA 预览封面。
-- LoRA 选择器支持搜索，并分别按**文件夹**与**基础模型**筛选。
-- 每个节点可独立设置**显示 N 个 LoRA**（默认 `3`，`0` 表示不限高度）。
-- 可选 `trigger_words` STRING 输出，并对多个已启用 LoRA 的触发词自动去重。
-- 每个 LoRA 的**输出触发词**开关决定它是否参与最终触发词输出。
-- 可显示使用说明、附加备注、来源链接、基础模型与推荐权重等元数据。
-- 支持英文 / 简体中文界面。
+### RuYi 提示词
 
-#### 推荐配套：ComfyUI-Lora-Manager
+连接模型对应的 CLIP 编码器，正负两个 CONDITIONING 输出可直接接入采样器。完整 LoRA 加载器可连接其 CLIP 输出；仅模型版使用原文本编码器。
 
-RuYi-Nodes 本身可以独立完成正常的多 LoRA 加载。
+- 正负提示词均支持段落命名、添加、折叠、排序、停用和删除；拖动段落底部横条调整显示高度。
+- 按顺序拼接启用段落，执行时把已连接的 LoRA 触发词追加到正面提示词。
+- 搜索高亮全部匹配；左右箭头定位上一处/下一处。常驻统计显示搜索命中与启用文本中完整词库标签的命中次数。
+- 设置可关闭负面板块，保留已写内容；关闭时负面输出编码空提示词，采样器仍可能要求连接负面条件。
+- 本地联想要求名称或译名连续匹配完整输入，忽略大小写并统一空格与下划线；别名只接受完整精确匹配并注明命中别名，不把分散字母或单字母当作宽泛匹配。
+- 停止输入约 120ms 后查询，移动光标、重新聚焦也可触发。上下箭头选候选，Enter/Tab 插入，Escape 关闭；中文输入法组词期间暂停，插入时保留句子其余内容。
+- 停止输入约 500ms 后检查英语拼写，未变化的错词标签不反复清空重建。点击 **拼写错误：** 下的标签，菜单可定位单词、替换、忽略或加入自定义词典。已知 tags 与可用触发词作为例外；建议仍需按语境判断。
+- 设置可调整文字大小（默认 `13px`，`10–32px`）、下划线模式、词库来源，导入 CSV 并编辑自定义词。词库就绪状态和总量移入设置。
+- 内置 **508,152 条**本地词库，合并导出的 Danbooru tags、中文译名及公开快照。来源、构建方式和第三方许可见 [词库说明](data/prompt/README.md)。运行时仅访问本机资源，不自动联网更新。
+- 导入词表保存在当前浏览器 IndexedDB；自定义词、段落高度、字号和设置随工作流保存。更换浏览器后需重新导入词表。
 
-如需预览图、触发词、基础模型信息、推荐权重、使用说明、附加备注和来源链接，推荐配合 **[ComfyUI-Lora-Manager](https://github.com/willmiao/ComfyUI-Lora-Manager)** 使用。RuYi-Nodes 会读取 LoRA Manager 生成的 `.metadata.json` sidecar 文件。
+分段用于组织和拼接文本，**不等同于空间区域条件或区域采样**。此节点需要 CLIP，输出采样条件而非普通 STRING。
 
-> **注意：** LoRA Manager 只推荐用于 LoRA 元数据相关功能，**RuYi 图像对比不依赖 LoRA Manager。**
+### RuYi 空Latent图像
 
-预期 sidecar 结构：
-
-```text
-my_lora.safetensors
-my_lora.metadata.json
-my_lora.jpeg
-```
-
-![LoRA 元数据文件示例](docs/images/lora-info.jpg)
-
-即使没有元数据，正常 LoRA 加载仍然可以使用。
-
-#### LoRA 选择器
-
-可按**文件夹**或**基础模型**搜索和筛选 LoRA，并在可用时显示预览图。
-
-![RuYi LoRA 选择器](docs/images/zh-lora-picker.jpg)
-
-#### 触发词输出
-
-两个 LoRA 加载器都会提供可选的 `trigger_words` STRING 输出。
-
-对于每个已启用 LoRA，**输出触发词**决定其触发词是否加入最终 STRING。多个 LoRA 的触发词会合并并自动去重。
-
-`trigger_words` 不连接也不会影响 LoRA 本身的加载。
-
-一种常见连接方式：
-
-```text
-主提示词 STRING ─────────────┐
-                              ├─ STRING 合并节点 ──> 最终提示词 STRING
-RuYi trigger_words STRING ───┘
-                                           │
-                                           └─> RuYi 文本监视
-```
-
-#### Krea2 / 仅模型工作流
-
-对于 Krea2 一类只需要把 LoRA 应用到 MODEL 的工作流，建议使用：
-
-```text
-MODEL / UNET
-    │
-    ▼
-RuYi 多 LoRA 加载器（仅模型）
-    │
-    ▼
-MODEL
-```
-
-文本编码器 / CLIP 路径保持独立，除非具体工作流另有要求。
+- **交换宽高**一键切换横竖构图，保留批次和类型。
+- **分辨率预设**只保存宽高。保存时新增分辨率，完全相同的宽高自动去重；不会覆盖当前选中的其他预设。支持读取、删除，预设保存在当前浏览器本地存储并供不同工作流共用。
+- **分辨率对齐**选择 `8 / 16 / 32 / 64` 的倍数，默认 `16`。手动调整、读取预设、缩放和执行时均按最近倍数取整。
+- **等比缩放**按稳定基准和百分比计算，箭头每次调整 10 个百分点。手动改宽高或读取预设会更新基准，也可点击“以当前为基准”。对齐会造成轻微比例偏差，到达上限时两边一起限制。
+- **Latent 类型**决定通道和张量布局：默认 `SD3 / Flux (16)`；`Anima (16)` 增加单帧维度；`SD1 / SDXL (4)` 与原生空 Latent 图像的 4 通道布局一致。按模型要求选择。
+- 对齐和类型相互独立：前者约束图像宽高，后者决定通道/布局。它们都按 8 倍空间下采样；对齐选择 16 并不意味着 16 通道。
+- 宽高范围 `16–16384`、批次 `1–4096`。宽高接入连线时禁用本地分辨率操作，请在上游调整。
+- 缩放基准随工作流保存。中英文控件区均按实际内容收紧，不预留空白状态区域。
 
 ### 图像对比与保存
 
-**RuYi 图像对比**是用于快速比较多个图像输出的可视化终端节点，不需要为了比较不同图片反复重新连接普通双图对比节点。
-
-![RuYi 图像对比](docs/images/zh-image-compare.jpg)
-
-#### 图像对比
-
-1. 连接一个或多个 IMAGE 输出；随着连接增加，节点会自动增加新的 IMAGE 输入。
-2. 通过顶部 **A** / **B** 下拉列表，从所有已连接图片中自由选择任意两张。
-3. 两种对比方式：
-   - **对比方式：滑动** — 在预览区左右移动鼠标改变分割位置。
-   - **对比方式：点击** — 点击预览区在 A / B 两张图片之间切换。
-4. 下方图片列表负责信息、命名和保存管理；A/B 选择仍由顶部下拉列表完成。
-
-每张图片项目显示：
-
-- 图片缩略图。
-- **图像名称** — 用于节点内部显示和 A/B 下拉列表。
-- 独立的**保存文件名** / 路径模板。
-- 分辨率和 PNG 文件体积。
-- 每张图片独立的**自动保存**开关。
-- 每张图片独立的**保存**按钮。
-
-图像名称与保存文件名互相独立。例如节点中可以显示为“二采输出”，实际保存时使用另一套文件名规则。
-
-#### 媒体资产与工作流元数据
-
-图像对比结果通过 ComfyUI 标准图片输出通道注册，因此候选图会出现在 **媒体资产 → 已生成** 以及任务/输出历史中。
-
-媒体资产 PNG 与节点内部的 A/B 对比预览缓存彼此独立。因此同一个图像对比节点再次执行时，仍可清理上一轮 Compare 预览，而不会使此前的媒体资产/历史记录失效；资产副本继续作为 ComfyUI 标准临时资产，由 ComfyUI 自己管理生命周期。
-
-节点内部会抑制 ComfyUI 默认的重复图片预览，只保留 RuYi 自己的 A/B 对比界面作为主要预览区域。
-
-在没有关闭 ComfyUI metadata 的情况下，RuYi 生成/保存的 PNG 会保留 `prompt` 与 `workflow` 等 ComfyUI 元数据。将保存的 PNG 拖回 ComfyUI，可以恢复对应工作流和生成信息。
-
-#### 保存 / 自动保存
-
-如果**保存文件名**没有指定目录，默认保存到：
+- 连接 IMAGE 输入后自动补充下一输入，使用 A/B 选单切换任意两张。
+- **滑动**模式随指针水平移动对比线；**点击**模式切换 A/B。
+- 点击展示区右下角 **加号放大镜**，在放大界面继续选择 A/B、切换模式和对比；Escape、关闭按钮或点击遮罩退出，状态保留。
+- 每张图片可独立设置图像名称、保存文件名/路径、自动保存和手动保存，显示分辨率与 PNG 文件体积。
+- 没有明确文件夹时保存到 `ComfyUI/output/RuYi-Compare/`，默认命名为 `%display_name-date:yyyy-MM-dd_HHmmss%`。
+- 支持 `%display_name%`、`%save_name%`、`%index%`、`%input%`、`%frame%`、`%date:yyyy-MM-dd_HHmmss%`。组合模板保持兼容，日期也可用于文件夹：
 
 ```text
-ComfyUI/output/RuYi-Compare/
+%date:yyyy-MM-dd%/%display_name-date:yyyy-MM-dd_HHmmss%
+D:\AI\Output\%date:yyyy-MM-dd%\%display_name-date:yyyy-MM-dd_HHmmss%
 ```
 
-默认保存模板：
+日期占位符需要包含两侧百分号，如 `%date:yyyy-MM-dd%`；不带百分号的 `date:...` 会被当作普通文字，冒号会被替换。相对路径保存在 RuYi-Compare 内，绝对 Windows 路径直接保存到指定位置；同名文件自动增加编号，不覆盖已有图片。
 
-```text
-%display_name-date:yyyy-MM-dd_HHmmss%
-```
+右键缩略图可 **另存为 / 复制图片**，使用原始分辨率；与遵循节点保存规则的“保存”按钮相互独立。启用元数据时 PNG 保留提示词和工作流，可拖回 ComfyUI 恢复。
 
-RuYi 文件名变量：
+结果显示在媒体资产/历史中，其副本与节点 A/B 预览缓存分离；重新执行替换节点缓存时，不使旧媒体资产失效。标准临时资产仍由 ComfyUI 管理。节点内冗余的原生预览已隐藏。
 
-```text
-用户填写：
-%display_name%   %save_name%
+### 安装和更新
 
-自动生成：
-%index%   %input%   %frame%   %date:yyyy-MM-dd_HHmmss%
-```
-
-相对子目录示例：
-
-```text
-对比结果/%display_name-date:yyyy-MM-dd_HHmmss%
-```
-
-保存到：
-
-```text
-ComfyUI/output/RuYi-Compare/对比结果/
-```
-
-Windows 绝对路径示例：
-
-```text
-C:\YourFolder\%display_name-date:yyyy-MM-dd_HHmmss%
-```
-
-重复文件名不会覆盖已有图片，而是自动追加数字后缀。
-
-当某个输入在新一轮工作流执行后真正变成新的图像内容时，该图片之前显示的保存状态提示会自动清除。
-
-#### 缩略图右键：原图操作
-
-右键候选图片的缩略图可以使用：
-
-- **另存为** — 使用系统/浏览器保存流程选择位置，并保存该候选项对应的**原始分辨率图片**。
-- **复制图片** — 将该候选项对应的**原始分辨率图片**复制到剪贴板。
-
-它们与节点里的 **保存**按钮用途不同：**保存**遵循当前图片的“保存文件名/路径模板”；**另存为**则是交互式的系统另存操作。
-
-### 安装
-
-#### 方法 A — Git clone
-
-在 `ComfyUI/custom_nodes` 目录打开终端：
+在 `ComfyUI/custom_nodes` 中执行：
 
 ```bash
 git clone https://github.com/RuYi-Xiao/RuYi-Nodes.git
 ```
 
-安装完成后重启 ComfyUI。
-
-以后更新：
+更新已有安装：
 
 ```bash
-cd RuYi-Nodes
+cd ComfyUI/custom_nodes/RuYi-Nodes
 git pull
 ```
 
-#### 方法 B — 手动 ZIP
+也可下载 GitHub ZIP，确保 `custom_nodes/RuYi-Nodes/__init__.py` 直接存在，避免多套一层同名目录。安装或 Python 节点更新后重启 ComfyUI；前端缓存可用 Ctrl+F5 刷新。
 
-1. 在 GitHub 下载仓库 ZIP。
-2. 解压到 `ComfyUI/custom_nodes`。
-3. 确认最终目录名为 `RuYi-Nodes`，并且 `__init__.py` 直接位于这个目录中。
-4. 重启 ComfyUI。
+旧的 **RuYi 文本监视** 测试节点已移除；旧工作流可改用其他 STRING 显示工具。
 
-可以搜索：
+## Shared appearance / 统一配色
 
-```text
-RuYi 多 LoRA 加载器
-RuYi 多 LoRA 加载器（仅模型）
-RuYi 图像对比
-RuYi 文本监视
-```
+All four interfaces and their menus use shared grayscale tokens: node `#333333`, groups `#292929`, content `#222222`, controls `#3A3A3A`, border `#505050`, hover `#474747`. Functional green/red, positive/negative and A/B accents remain distinct. Native ComfyUI node chrome retains its own appearance settings.<br>
+四类界面与选单共用灰阶：节点底色 `#333333`、分组 `#292929`、内容区 `#222222`、控件 `#3A3A3A`、边框 `#505050`、悬停 `#474747`。保留添加/删除、正负提示词及 A/B 的功能色；原生节点外壳仍遵循 ComfyUI 外观设置。
 
-### 更新记录
+## Changelog and license / 更新记录与许可
 
-版本历史见 [CHANGELOG.md](CHANGELOG.md)。
-
-### 许可证
-
-RuYi-Nodes 使用 [MIT License](LICENSE) 发布。
+See [CHANGELOG.md](CHANGELOG.md) for changes. Released under the [MIT License](LICENSE); third-party vocabulary/spelling resources retain their own attribution and licenses.<br>
+更新内容见 [CHANGELOG.md](CHANGELOG.md)。项目使用 [MIT License](LICENSE)，第三方词库与拼写资源保留各自来源及许可。

@@ -1,0 +1,15 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+assert.ok(fs.existsSync(new URL('../js/latent/dimensions.mjs', import.meta.url)), 'Missing empty latent resolution controls');
+const {alignDimension, scaleDimensions} = await import('../js/latent/dimensions.mjs');
+assert.equal(alignDimension(833, 16), 832);
+assert.equal(alignDimension(840, 16), 848);
+assert.equal(alignDimension(0, 64), 64);
+assert.equal(alignDimension(20000, 32), 16384);
+assert.deepEqual(scaleDimensions(832, 1216, 150, 16), [1248, 1824]);
+assert.deepEqual(scaleDimensions(832, 1216, 50, 16), [416, 608]);
+assert.deepEqual(scaleDimensions(1216, 832, 150, 16), [1824, 1248]);
+assert.deepEqual(scaleDimensions(8192, 16384, 200, 16), [8192, 16384]);
+assert.deepEqual(scaleDimensions(32, 64, 1, 16), [16, 32]);
+assert.deepEqual(scaleDimensions(832, 1216, 110, 16), [912, 1344]);
+console.log('PASS alignment, ratio scaling, orientation and uniform limits');

@@ -45,22 +45,43 @@
       }
     }
   },
-  "RuYiTextPreview": {
-    "display_name": "RuYi 文本监视",
-    "description": "运行后显示输入 STRING 的完整内容，并原样输出。",
+  "RuYiImageCompare": {
+    "display_name": "RuYi 图像对比",
+    "description": "从多个动态图像输入中自由选择任意两张图像，并使用滑动对比或点击切换模式进行比较。"
+  },
+  "RuYiEmptyLatentImage": {
+    "display_name": "RuYi 空Latent图像",
+    "description": "创建空 Latent，支持交换宽高、分辨率预设、倍数对齐和等比缩放。",
     "inputs": {
-      "text": {
-        "name": "文本"
+      "width": {"name": "宽度"},
+      "height": {"name": "高度"},
+      "batch_size": {"name": "批次数量"},
+      "alignment": {"name": "分辨率对齐", "tooltip": "宽高按所选倍数取整。请按模型要求选择。"},
+      "latent_type": {"name": "Latent 类型", "tooltip": "SD1/SDXL 为 4 通道，SD3/Flux 为 16 通道；Anima 使用带单帧维度的 16 通道。"}
+    },
+    "outputs": {"0": {"name": "Latent"}}
+  },
+  "RuYiPrompt": {
+    "display_name": "RuYi 提示词",
+    "description": "分段编辑正负提示词，支持搜索、本地 tags 联想和离线拼写提示。",
+    "inputs": {
+      "clip": {
+        "name": "CLIP"
+      },
+      "prompt_data": {
+        "name": "提示词编辑器"
+      },
+      "trigger_words": {
+        "name": "触发词"
       }
     },
     "outputs": {
       "0": {
-        "name": "STRING"
+        "name": "正面条件"
+      },
+      "1": {
+        "name": "负面条件"
       }
     }
-  },
-  "RuYiImageCompare": {
-    "display_name": "RuYi 图像对比",
-    "description": "从多个动态图像输入中自由选择任意两张图像，并使用滑动对比或点击切换模式进行比较。"
   }
 }

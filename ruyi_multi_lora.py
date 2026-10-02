@@ -18,7 +18,7 @@ from server import PromptServer
 import nodes
 
 
-VERSION = "0.1.18"
+VERSION = "0.2.0"
 CATEGORY = "RuYi-Nodes/loaders"
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".avif", ".bmp"}
 
@@ -622,43 +622,12 @@ class RuYiMultiLoraLoaderModelOnly:
         return current_model, _collect_triggers(stack)
 
 
-class RuYiTextPreview:
-    """Simple STRING monitor/output node for inspecting final merged prompt text."""
-
-    @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "text": ("STRING", {"forceInput": True}),
-            }
-        }
-
-    RETURN_TYPES = ("STRING",)
-    RETURN_NAMES = ("STRING",)
-    FUNCTION = "preview"
-    CATEGORY = "RuYi-Nodes/text"
-    OUTPUT_NODE = True
-    DESCRIPTION = (
-        "Displays the input STRING after execution and passes it through unchanged. "
-        "Useful for inspecting merged prompt / LoRA trigger text."
-    )
-
-    def preview(self, text=""):
-        text = "" if text is None else str(text)
-        return {
-            "ui": {"text": [text]},
-            "result": (text,),
-        }
-
-
 NODE_CLASS_MAPPINGS = {
     "RuYiMultiLoraLoader": RuYiMultiLoraLoader,
     "RuYiMultiLoraLoaderModelOnly": RuYiMultiLoraLoaderModelOnly,
-    "RuYiTextPreview": RuYiTextPreview,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
     "RuYiMultiLoraLoader": "RuYi multi-Lora-loader",
     "RuYiMultiLoraLoaderModelOnly": "RuYi multi-Lora-loader (model only)",
-    "RuYiTextPreview": "RuYi text-preview",
 }

@@ -41,3 +41,6 @@ Desktop.ini
 *.tmp
 *.temp
 *~
+
+# Isolated prompt-node verification server
+tests/runtime/

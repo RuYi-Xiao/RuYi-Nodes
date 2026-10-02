@@ -1,0 +1,58 @@
+import assert from 'node:assert/strict';
+import { prepareVocabulary, complete, completionAt, rebaseSpelling, parseCSV, importVocabulary, tokenAt, insertion, spellingRanges } from '../js/prompt/engine.mjs';
+
+const csv = 'name,category,postCount,aliases\r\nlong_hair,0,50,"longhair,flowing_hair"\r\nblue_eyes,0,60,\r\n';
+assert.deepEqual(parseCSV(csv)[1], ['long_hair','0','50','longhair,flowing_hair']);
+const rows = prepareVocabulary([['long_hair','general',50,['longhair'],'长发',['local']],
+ ['blue_eyes','general',60,[],'蓝眼',['danbooru']],['long_dress','general',10,[],'',['local']]]);
+assert.equal(complete(rows,'长发',['local'])[0][0], 'long_hair');
+assert.equal(complete(rows,'longhair',['local'])[0][0], 'long_hair');
+assert.deepEqual(complete(rows,'long',['local']).map(x=>x[0]), ['long_hair','long_dress']);
+assert.equal(complete(rows,'blue',['local']).length, 0);
+assert.equal(complete(rows,'long',['local'],1).length, 1);
+const strictRows=prepareVocabulary([['nadeko','character',900,['RMA'],'',['local']],['hizack','character',800,['RMS-106'],'',['local']],['red_moon','general',700,[],'',['local']],['arm','general',100,[],'手臂',['local']],['rm_tag','general',50,[],'',['local']]]);
+assert.deepEqual(complete(strictRows,'rm',['local']).map(row=>row[0]),['rm_tag','arm']);
+assert.equal(complete(strictRows,'r',['local']).length,0);
+assert.equal(complete(strictRows,'RMA',['local'])[0][0],'nadeko');
+assert.equal(complete(strictRows,'RMS-106',['local'])[0][0],'hizack');
+assert.deepEqual(completionAt(strictRows,'She wears glasses. rm',21,['local']).options.map(row=>row[0]),['rm_tag','arm']);
+const merged = prepareVocabulary([['long_hair','general',10,[],'长发',['local']], ['long hair','general',80,['longhair'],'',['danbooru']]]);
+assert.equal(complete(merged,'long hair',['local','danbooru']).length, 1);
+assert.equal(complete(merged,'longhair',['danbooru'])[0][2], 80);
+assert.equal(complete(merged,'长发',['danbooru'])[0][0], 'long_hair');
+assert.deepEqual(importVocabulary('blue_eyes,蓝眼\n')[0], ['blue_eyes','custom',0,[],'蓝眼',['import']]);
+assert.equal(importVocabulary('character_tag,other_names,copyright,parent_tag,post_count\nnew_character,别名,,,22')[0][2],22);
+assert.throws(()=>importVocabulary('invalid'),/CSV/);
+assert.deepEqual(tokenAt('1girl, blue ey, smile',14), {start:7,end:14,text:'blue ey'});
+assert.deepEqual(completionAt(rows,'She has blue ey and a smile',15,['danbooru']).token,{start:8,end:15,text:'blue ey'});
+assert.equal(completionAt(rows,'She has blue ey and a smile',15,['danbooru']).options[0][0],'blue_eyes');
+assert.deepEqual(completionAt(rows,'She has blue eyes and a smile',14,['danbooru']).token,{start:8,end:17,text:'blue e'});
+assert.deepEqual(completionAt(rows,'long ha',7,['local']).token,{start:0,end:7,text:'long ha'});
+assert.equal(completionAt(rows,'She has b',9,['danbooru']).options.length,0);
+assert.equal(completionAt(rows,'She has blue ey',15,['local']).options.length,0);
+for(const text of ['blue ey with a smile','blue ey. A girl stands in a forest.'])
+ assert.deepEqual(completionAt(rows,text,7,['danbooru']).token,{start:0,end:7,text:'blue ey'});
+assert.deepEqual(completionAt(rows,'A girl has blue ey. She smiles.',18,['danbooru']).token,{start:11,end:18,text:'blue ey'});
+assert.deepEqual(completionAt(rows,'blue eyes',4,['danbooru']).token,{start:0,end:9,text:'blue'});
+assert.deepEqual(completionAt(rows,'blue eyes and a smile',4,['danbooru']).token,{start:0,end:9,text:'blue'});
+assert.deepEqual(completionAt(rows,'blue eyes  and a smile',4,['danbooru']).token,{start:0,end:9,text:'blue'});
+assert.deepEqual(completionAt(rows,'She has blue eyes and a smile',12,['danbooru']).token,{start:8,end:17,text:'blue'});
+const longSentence='This is a long sentence '.repeat(10)+'blue ey';
+assert.equal(completionAt(rows,longSentence,longSentence.length,['danbooru']).options.length>0,true);
+const typos=[{start:0,end:9,word:'backgroun'},{start:11,end:17,word:'typoaa'}];
+assert.deepEqual(rebaseSpelling(typos,'backgroun, typoaa','soft light, backgroun, typoaa'),typos.map(e=>({...e,start:e.start+12,end:e.end+12})));
+assert.deepEqual(rebaseSpelling(typos,'backgroun, typoaa','background, typoaa'),[{start:12,end:18,word:'typoaa'}]);
+assert.deepEqual(rebaseSpelling(typos,'backgroun, typoaa','backgroun, typoaa, long hair'),typos);
+assert.deepEqual(rebaseSpelling(typos,'backgroun, typoaa','backgroun, typoaa1'),[typos[0]]);
+assert.deepEqual(rebaseSpelling(typos,'backgroun, typoaa','backgroun, typ'),[typos[0]]);
+assert.equal(insertion('blue_eyes',false), 'blue eyes');
+assert.equal(insertion('name_(series)',false), 'name \\(series\\)');
+const dictionary = {check: word=>['beautiful','background'].includes(word.toLowerCase())};
+assert.deepEqual(spellingRanges('long hair, beautiful backgroun',rows,dictionary,[],''), [{start:21,end:30,word:'backgroun'}]);
+assert.deepEqual(spellingRanges('longhair, @myArtist, backgroun',rows,dictionary,['backgroun'],'@myArtist'), []);
+const qualified = prepareVocabulary([['honkai (series)','copyright',1,[],'',['local']],['2b_(nier:automata)','character',1,[],'',['local']]]);
+const escapedTag='honkai \\(series\\)';
+assert.deepEqual(completionAt(qualified,escapedTag,6,['local']).token,{start:0,end:escapedTag.length,text:'honkai'});
+for(const text of ['honkai \\(series\\)', 'honkai (series)', '2b_\\(nier:automata\\)', '(honkai \\(series\\):1.2)', '((honkai \\(series\\):1.2))'])
+ assert.deepEqual(spellingRanges(text,qualified,dictionary), [], `Known qualified tag flagged: ${text}`);
+console.log('PASS CSV, aliases, Chinese, ordering, source filters, insertion and spelling exemptions');

@@ -1,0 +1,95 @@
+<!doctype html><html lang="zh"><meta charset="utf-8"><title>RuYi Empty Latent UI</title>
+<style>body{background:#252525;color:#eee;font:14px system-ui}.node{width:380px;border:1px solid #555;margin:12px;padding:12px}#results{white-space:pre-wrap}</style>
+<h2>RuYi Empty Latent UI</h2><pre id="results"></pre><div id="nodes"></div>
+<script type="module">
+import {app} from '/scripts/app.js';
+import '/extensions/RuYi/ruyi_empty_latent.js';
+const extension=app.extensions.find(x=>x.name==='RuYi-Nodes.EmptyLatent');
+localStorage.removeItem('RuYi.EmptyLatent.Presets.v1');
+const results=document.querySelector('#results');
+function equal(a,b){if(JSON.stringify(a)!==JSON.stringify(b))throw new Error(`Expected ${JSON.stringify(b)}, got ${JSON.stringify(a)}`)}
+function create(properties={}){
+ const host=document.createElement('div');host.className='node';document.querySelector('#nodes').append(host);
+ const node={comfyClass:'RuYiEmptyLatentImage',properties,size:[380,420],widgets:[],inputs:[],setSize(size){this.size=size},setDirtyCanvas(){},
+ addDOMWidget(name,type,panel,options){host.append(panel);const widget={name,type,...options,onRemove(){host.remove();}};this.widgets.push(widget);return widget}};
+ for(const [name,value] of Object.entries({width:832,height:1216,batch_size:1,alignment:'16',latent_type:'SD3 / Flux (16)'}))node.widgets.push({name,value,options:{step:80,step2:8}});
+ extension.nodeCreated(node);return {node,host,widget:name=>node.widgets.find(x=>x.name===name),button:label=>[...host.querySelectorAll('button')].find(x=>x.textContent.includes(label)),input:label=>host.querySelector(`[aria-label="${label}"]`)};
+}
+function change(el,value){el.value=value;el.dispatchEvent(new Event('change',{bubbles:true}))}
+function choose(t,value){t.input('分辨率预设').click();document.querySelector(`[role="option"][data-value="${value}"]`).click();}
+async function test(name,run){try{await run();results.textContent+=`PASS ${name}\n`}catch(error){results.textContent+=`FAIL ${name}: ${error.message}\n`}}
+await test('Saving with a selected preset creates a new resolution and repeated saves do not duplicate it',()=>{
+ const t=create();t.button('保存预设').click();
+ choose(t,'832x1216');
+ t.button('交换宽高').click();t.button('保存预设').click();t.button('保存预设').click();
+ equal(JSON.parse(localStorage.getItem('RuYi.EmptyLatent.Presets.v1')).map(p=>[p.width,p.height]),[[832,1216],[1216,832]]);
+});
+await test('Legacy named presets remain available and identical dimensions appear only once',()=>{
+ localStorage.setItem('RuYi.EmptyLatent.Presets.v1',JSON.stringify([{name:'Portrait',width:832,height:1216},{name:'Second portrait',width:832,height:1216},{name:'Landscape',width:1216,height:832}]));
+ const t=create();const picker=t.input('分辨率预设');
+ picker.click();equal([...document.querySelectorAll('[role="option"]')].map(x=>x.textContent),['选择预设…','832 × 1216','1216 × 832']);document.querySelector('[role="option"]').click();
+ localStorage.removeItem('RuYi.EmptyLatent.Presets.v1');
+});
+await test('Swap transposes width and height without changing batch or latent type',()=>{
+ const t=create();t.button('交换宽高').click();equal([t.widget('width').value,t.widget('height').value],[1216,832]);equal(t.widget('batch_size').value,1);equal(t.widget('latent_type').value,'SD3 / Flux (16)');
+});
+await test('Manual dimensions and alignment snap both sides and reset the scale baseline',()=>{
+ const t=create();t.widget('width').value=840;t.widget('width').callback(840);equal(t.widget('width').value,848);
+ t.widget('alignment').value='64';t.widget('alignment').callback('64');equal([t.widget('width').value,t.widget('height').value],[832,1216]);equal(t.input('缩放百分比').value,'100');
+});
+await test('Native width arrows follow alignment in both directions with step2 priority',()=>{
+ const t=create();const w=t.widget('width');
+ function arrow(direction){w.value+=direction*(w.options.step2||w.options.step*.1);w.callback(w.value)}
+ arrow(-1);equal(w.value,816);arrow(1);equal(w.value,832);
+ t.widget('alignment').value='64';t.widget('alignment').callback('64');arrow(-1);equal(w.value,768);arrow(1);equal(w.value,832);
+});
+await test('Scaling uses a stable baseline and applies uniform upper limits',()=>{
+ const t=create();change(t.input('缩放百分比'),'150');equal([t.widget('width').value,t.widget('height').value],[1248,1824]);
+ change(t.input('缩放百分比'),'50');equal([t.widget('width').value,t.widget('height').value],[416,608]);
+ t.button('以当前为基准').click();change(t.input('缩放百分比'),'200');equal([t.widget('width').value,t.widget('height').value],[832,1216]);
+});
+await test('Editing a valid scale immediately updates the resolution without requiring blur',()=>{
+ const t=create();const percent=t.input('缩放百分比');percent.value='150';percent.dispatchEvent(new Event('input',{bubbles:true}));
+ equal([t.widget('width').value,t.widget('height').value],[1248,1824]);
+});
+await test('Presets persist across nodes and reload dimensions without batch or type changes',()=>{
+ const a=create();a.button('保存预设').click();
+ const b=create();b.button('交换宽高').click();choose(b,'832x1216');b.button('读取').click();equal([b.widget('width').value,b.widget('height').value],[832,1216]);
+ const c=create();choose(c,'832x1216');equal(c.input('分辨率预设').textContent,'832 × 1216');
+ b.button('删除').click();equal(a.input('分辨率预设').textContent,'选择预设…');equal(c.input('分辨率预设').textContent,'选择预设…');
+});
+await test('Reading a preset respects the selected alignment',()=>{
+ const t=create();t.widget('width').value=840;t.widget('height').value=1224;t.widget('alignment').value='8';t.widget('alignment').callback('8');t.button('保存预设').click();
+ t.widget('alignment').value='64';t.widget('alignment').callback('64');choose(t,'840x1224');t.button('读取').click();equal([t.widget('width').value,t.widget('height').value],[832,1216]);
+});
+await test('Workflow restore preserves a scaled baseline and later re-scales correctly',()=>{
+ const a=create();change(a.input('缩放百分比'),'150');const props=JSON.parse(JSON.stringify(a.node.properties));const b=create(props);
+ b.widget('width').value=1248;b.widget('height').value=1824;b.node.onConfigure({});equal(b.input('缩放百分比').value,'150');change(b.input('缩放百分比'),'100');equal([b.widget('width').value,b.widget('height').value],[832,1216]);
+});
+await test('Comfy configure does not overwrite restored properties before reading the scale',()=>{
+ const t=create();t.widget('width').value=1248;t.widget('height').value=1824;
+ t.node.properties={ruyi_latent_scale:{width:832,height:1216,percent:150}};
+ t.node.onConfigure({properties:t.node.properties});equal(t.input('缩放百分比').value,'150');
+ change(t.input('缩放百分比'),'100');equal([t.widget('width').value,t.widget('height').value],[832,1216]);
+});
+await test('Linked resolution inputs disable resolution operations without changing values',()=>{
+ const t=create();t.node.inputs=[{name:'width',link:4}];t.node.onConnectionsChange();equal(t.button('交换宽高').disabled,true);equal(t.input('缩放百分比').disabled,true);equal(t.button('读取').disabled,true);equal([t.widget('width').value,t.widget('height').value],[832,1216]);
+});
+await test('Invalid scale keeps resolution and English UI fits at minimum width',()=>{
+ const t=create();change(t.input('缩放百分比'),'NaN');equal([t.widget('width').value,t.widget('height').value],[832,1216]);
+ document.documentElement.lang='en';const en=create();equal(en.button('Swap width / height')!==undefined,true);equal(en.host.scrollWidth<=en.host.clientWidth,true);document.documentElement.lang='zh';
+});
+await test('Removed widgets stop reacting to shared preset changes and keep DOM cleanup',()=>{
+ const removed=create();const previous=removed.input('分辨率预设').textContent;
+ removed.widget('ruyi_latent_controls').onRemove();
+ const live=create();live.button('保存预设').click();
+ equal(removed.input('分辨率预设').textContent,previous);equal(removed.host.isConnected,false);
+});
+await test('Preset options match the rendered picker size at 200% zoom and detach with the node',()=>{
+ const t=create();t.host.style.transform='scale(2)';t.host.style.transformOrigin='top left';t.input('分辨率预设').click();
+ const menu=document.querySelector('[role="listbox"]');
+ equal(getComputedStyle(menu.firstElementChild).fontSize,'26px');
+ equal(Math.round(menu.getBoundingClientRect().width),Math.round(t.input('分辨率预设').getBoundingClientRect().width));
+ t.widget('ruyi_latent_controls').onRemove();equal(menu.isConnected,false);
+});
+</script></html>

@@ -1,0 +1,23 @@
+<!doctype html><html lang="zh"><meta charset="utf-8"><title>RuYi dropdown tests</title>
+<style>body{background:#333;color:#eee;font:13px/1.4 system-ui}#fixtures{position:fixed;left:30px;top:100px}.owner{width:160px;margin:20px;transform-origin:top left}#results{white-space:pre-wrap}</style>
+<pre id="results"></pre><div id="fixtures"></div>
+<script type="module">
+const out=document.querySelector('#results');
+try {
+ const {createDropdown}=await import('/extensions/RuYi/dropdown.mjs');
+ const assert=(condition,message)=>{if(!condition)throw new Error(message)};
+ const options=[{value:'a',label:'Alpha'},{value:'b',label:'Blocked',disabled:true},{value:'c',label:'Charlie'}];
+ const made=[];
+ function create(scale=1){const owner=document.createElement('div');owner.className='owner';owner.style.transform=`scale(${scale})`;const d=createDropdown({label:'Choose',options});d.style.width='160px';owner.append(d);document.querySelector('#fixtures').append(owner);made.push(d);return d;}
+ function key(d,key){d.dispatchEvent(new KeyboardEvent('keydown',{key,bubbles:true,cancelable:true}));}
+ const menu=()=>document.querySelector('.ruyi-dropdown-menu');
+ async function test(name,run){try{await run();out.textContent+=`PASS ${name}\n`}catch(e){out.textContent+=`FAIL ${name}: ${e.message}\n`}finally{for(const d of made)d.dispose();document.querySelector('#fixtures').replaceChildren();made.length=0}}
+ await test('Menu font and width track 50%, 100% and 200% canvas zoom',()=>{for(const scale of [.5,1,2]){const d=create(scale);d.click();const m=menu(),rect=d.getBoundingClientRect();assert(Math.abs(m.getBoundingClientRect().width-rect.width)<1,'width mismatch');assert(Math.abs(parseFloat(getComputedStyle(m.firstElementChild).fontSize)-13*scale)<.1,'font mismatch');assert(m.getBoundingClientRect().top>=rect.bottom-1,'menu should fit below the trigger');d.close();}});
+ await test('Keyboard selection skips disabled options and only emits user changes',()=>{const d=create();let changes=0;d.addEventListener('change',()=>changes++);d.value='a';assert(changes===0,'setter emitted change');d.focus();key(d,'ArrowDown');key(d,'ArrowDown');key(d,'Enter');assert(d.value==='c'&&changes===1,'keyboard did not skip disabled option');assert(document.activeElement===d&&!menu(),'focus not retained');d.click();key(d,'Home');key(d,'Escape');assert(d.value==='c'&&!menu(),'Escape committed a selection');d.click();key(d,'Tab');assert(!menu(),'Tab left menu open');});
+ await test('Click selects label and value, options use text safely',()=>{const d=create();d.setOptions([{value:'x',label:'<img src=x onerror=alert(1)>',disabled:true},...options]);d.value='c';d.click();assert(!menu().querySelector('img'),'label interpreted as HTML');menu().querySelector('[data-value=a]').click();assert(d.value==='a'&&d.textContent==='Alpha'&&!menu(),'choice not applied');});
+ await test('Only one menu is open; outside click, blur and scroll dismiss',()=>{const a=create(),b=create();a.click();b.click();assert(a.getAttribute('aria-expanded')==='false'&&document.querySelectorAll('.ruyi-dropdown-menu').length===1,'multiple menus');document.body.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true}));assert(!menu(),'outside click');a.click();b.focus();assert(!menu(),'blur');a.click();window.dispatchEvent(new Event('scroll'));assert(!menu(),'scroll');});
+ await test('Owner containment, option updates and disposal remove stale menus',()=>{const d=create();d.click();assert(d.containsTarget(menu().firstElementChild),'menu not owned');d.setOptions([{value:'q',label:'Quiet'}]);assert(!menu()&&d.value==='q','stale options remained');d.click();d.dispose();assert(!menu()&&d.getAttribute('aria-expanded')==='false','dispose leaked popup');d.click();assert(!menu(),'disposed trigger reopened');});
+ await test('Empty/disabled dropdowns do not open',()=>{const d=create();d.disabled=true;d.click();assert(!menu(),'disabled opened');d.disabled=false;d.setOptions([]);d.click();assert(!menu(),'empty opened');});
+} catch(e){out.textContent+=`FAIL Shared dropdown: ${e.message}\n`}
+document.title=out.textContent.includes('FAIL')?'FAIL dropdown':'PASS dropdown';
+</script></html>

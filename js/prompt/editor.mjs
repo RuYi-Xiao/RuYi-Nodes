@@ -1,5 +1,6 @@
 import {insertion, rebaseSpelling, matchedAlias} from './engine.mjs';
 import '../theme.mjs';
+import {settingsIcon, isWorkflowShortcut} from '../ui_controls.mjs';
 
 let worker, requestId = 0;
 const pending = new Map();
@@ -42,7 +43,7 @@ function installStyles() {
     if (document.getElementById('ruyi-prompt-style')) return;
     const style = el('style'); style.id = 'ruyi-prompt-style';
     style.textContent = `
-    .ruyi-prompt {box-sizing:border-box;width:100%;height:auto!important;padding:10px;color:var(--ruyi-text);font:13px Arial,sans-serif;background:var(--ruyi-group-bg);border-radius:6px;}
+    .ruyi-prompt {box-sizing:border-box;width:100%;height:auto!important;padding:10px;color:var(--ruyi-text);font:13px Arial,sans-serif;background:transparent;border-radius:6px;}
     .ruyi-prompt * {box-sizing:border-box;} .ruyi-prompt [hidden] {display:none!important;}
     .ruyi-prompt button,.ruyi-prompt input[type=text] {font:inherit;color:inherit;background:var(--ruyi-control-bg);border:1px solid var(--ruyi-border);border-radius:4px;padding:5px 8px;}
     .ruyi-prompt button {cursor:pointer;white-space:nowrap;}
@@ -112,11 +113,11 @@ export function createPromptWidget(node, inputName, app) {
     const count = el('span','ruyi-prompt-matches'), tagCount = el('span'), statistics = el('div','ruyi-prompt-statistics'), settingsPanel = el('div','ruyi-prompt-settings');settingsPanel.hidden=true;
     const button = (text, action, title) => {const b=el('button','',text);b.type='button';if(action)b.dataset.action=action;if(title){b.title=title;b.setAttribute('aria-label',title);}return b;};
     const previous=button('‹','previous-match',tr('previous')), next=button('›','next-match',tr('next')), settingsButton=button(tr('settings'));
-    settingsButton.setAttribute('aria-expanded','false');toolbar.append(search,previous,next,settingsButton);statistics.append(count,tagCount);tagCount.title=tr('tagHelp');
+    settingsIcon(settingsButton,tr('settings'));toolbar.append(search,previous,next,settingsButton);statistics.append(count,tagCount);tagCount.title=tr('tagHelp');
     const status=el('div','ruyi-prompt-status',tr('loading')), groups=el('div');
     panel.append(toolbar,settingsPanel,statistics,groups);
     const closePopup = () => {popup?.remove();popup=null;candidates=[];queryRevision++;
-        for(const editor of editors.values()){clearTimeout(editor.completionTimer);timers.delete(editor.completionTimer);editor.completionTimer=null;editor.completionWanted=false;}
+        for(const editor of editors.values()){clearTimeout(editor.completionTimer);timers.delete(editor.completionTimer);editor.completionTimer=null;}
     };
     const changed = () => {rawInvalid=null;app.graph?.setDirtyCanvas?.(true,true);};
     const requiredHeight = () => Math.max(330,node.computeSize?.()[1] || panel.scrollHeight+82);
@@ -218,6 +219,24 @@ export function createPromptWidget(node, inputName, app) {
         popup.style.width=`${width}px`;popup.style.left=`${Math.max(4,Math.min(rect.left,innerWidth-width-4))}px`;
         popup.style.top=`${Math.max(4,Math.min(rect.bottom,innerHeight-310))}px`;return popup;
     }
+    function positionCompletion(editor) {
+        if(!popup)return;
+        const {input,overlay}=editor,caret=input.selectionStart,box=input.getBoundingClientRect();
+        const walker=document.createTreeWalker(overlay,NodeFilter.SHOW_TEXT);let text,offset=0;
+        while((text=walker.nextNode())) {
+            if(caret<=offset+text.length) {
+                const range=document.createRange();range.setStart(text,caret-offset);range.collapse(true);
+                const rect=range.getBoundingClientRect(),scale=box.height/input.offsetHeight||1;
+                const lineHeight=parseFloat(getComputedStyle(input).lineHeight)*scale;
+                popup.style.width=`${Math.min(420,Math.max(260,box.width))}px`;
+                popup.style.left=`${rect.left}px`;
+                // Keep suggestions below the source line; viewport edges may clip them.
+                popup.style.top=`${rect.top+Math.max(rect.height,lineHeight)+4*scale}px`;
+                return;
+            }
+            offset+=text.length;
+        }
+    }
     function replace(editor,start,end,text) {
         const input=editor.input;input.focus();input.setSelectionRange(start,end);
         // Native insertion preserves textarea undo history; the fallback is for browsers without this command.
@@ -244,7 +263,8 @@ export function createPromptWidget(node, inputName, app) {
             const {token,options}=await request('complete_at',{text,caret,sources:state.settings.sources});
             if(disposed||revision!==queryRevision||input.value!==text||input.selectionStart!==caret||input.selectionEnd!==caret||editor.composing||document.activeElement!==input)return;
             if(!options.length){closePopup();return;}
-            popupAt(input);active=editor;popupToken=token;popupText=text;popupCaret=caret;selected=0;candidates=options;editor.completionWanted=true;
+            popupAt(input);active=editor;popupToken=token;popupText=text;popupCaret=caret;selected=0;candidates=options;
+            positionCompletion(editor);
             options.forEach((row,index)=>{const b=button(insertion(row[0],state.settings.underscores));b.setAttribute('role','option');b.setAttribute('aria-selected',String(index===0));
                 const alias=matchedAlias(row,token.text);
                 b.append(el('small','',[alias?`${tr('alias')}：${alias}`:'',row[4],row[1],row[5].join(' / ')].filter(Boolean).join(' · ')));
@@ -257,7 +277,6 @@ export function createPromptWidget(node, inputName, app) {
     function scheduleCompletion(editor) {
         closePopup();
         if(disposed||editor.composing||!state.settings.autocomplete||document.activeElement!==editor.input||editor.input.selectionStart!==editor.input.selectionEnd)return;
-        editor.completionWanted=true;
         editor.completionTimer=setTimeout(()=>{timers.delete(editor.completionTimer);editor.completionTimer=null;completion(editor);},120);timers.add(editor.completionTimer);
     }
     function renderSettings() {
@@ -315,14 +334,13 @@ export function createPromptWidget(node, inputName, app) {
                 const errorList=el('div','ruyi-prompt-error-list');const grip=el('div','ruyi-prompt-resize');grip.setAttribute('role','separator');grip.setAttribute('aria-label',`${tr(side)} ${index+1} ${tr('resize')}`);grip.setAttribute('aria-orientation','horizontal');grip.tabIndex=0;
                 card.append(head,wrap,grip,errorList);wrap.hidden=grip.hidden=item.collapsed;errorList.hidden=item.collapsed;
                 const editor={input,overlay,errorList,item,side,bar,thumb,errors:[],matches:[],revision:0,composing:false,timer:null};editors.set(item.id,editor);
-                input.oninput=event=>{closePopup();editor.errors=rebaseSpelling(editor.errors,item.text,input.value);item.text=input.value;editor.revision++;renderErrors(editor);matchIndex=-1;changed();paint(editor);vocabularyStats();
+                input.oninput=event=>{if(input.value===item.text)return;closePopup();editor.errors=rebaseSpelling(editor.errors,item.text,input.value);item.text=input.value;editor.revision++;renderErrors(editor);matchIndex=-1;changed();paint(editor);vocabularyStats();
                     if(!editor.composing&&!event.isComposing){delayed(editor);scheduleCompletion(editor);}};
-                input.addEventListener('compositionstart',()=>{editor.composing=true;editor.revision++;closePopup();clearTimeout(editor.timer);timers.delete(editor.timer);});
-                input.addEventListener('compositionend',()=>{editor.composing=false;editor.errors=rebaseSpelling(editor.errors,item.text,input.value);item.text=input.value;renderErrors(editor);changed();paint(editor);vocabularyStats();delayed(editor);scheduleCompletion(editor);});
-                input.onscroll=()=>{syncScroll(editor);if(!popup&&editor.completionWanted)scheduleCompletion(editor);};
-                input.onfocus=()=>scheduleCompletion(editor);input.onblur=closePopup;
-                input.onpointerup=()=>scheduleCompletion(editor);
-                input.onkeyup=event=>{if(['ArrowLeft','ArrowRight','Home','End','PageUp','PageDown'].includes(event.key)||(!popup&&['ArrowUp','ArrowDown'].includes(event.key)))scheduleCompletion(editor);};
+                input.addEventListener('compositionstart',()=>{editor.composing=true;editor.compositionText=input.value;editor.revision++;closePopup();clearTimeout(editor.timer);timers.delete(editor.timer);});
+                input.addEventListener('compositionend',()=>{const edited=input.value!==editor.compositionText;editor.composing=false;editor.errors=rebaseSpelling(editor.errors,item.text,input.value);item.text=input.value;renderErrors(editor);changed();paint(editor);vocabularyStats();delayed(editor);if(edited)scheduleCompletion(editor);});
+                input.onscroll=()=>{syncScroll(editor);if(popup&&active===editor&&candidates.length)positionCompletion(editor);};
+                input.onblur=closePopup;
+                input.onpointerup=closePopup;
                 let scrollDrag=null;
                 bar.onpointerdown=event=>{event.preventDefault();closePopup();
                     const scale=bar.getBoundingClientRect().height/bar.offsetHeight||1;
@@ -344,6 +362,7 @@ export function createPromptWidget(node, inputName, app) {
                 input.onpointerdown=closePopup;
                 input.onkeydown=event=>{
                     if(event.isComposing||editor.composing)return;
+                    if(isWorkflowShortcut(event)){closePopup();return;}
                     if(popup&&active===editor&&candidates.length&&
                         (input.value!==popupText||input.selectionStart!==popupCaret||input.selectionEnd!==popupCaret))closePopup();
                     if(popup&&active===editor&&candidates.length&&['ArrowDown','ArrowUp','Enter','Tab','Escape'].includes(event.key)){
@@ -368,13 +387,13 @@ export function createPromptWidget(node, inputName, app) {
         revealRange(editor,range.start,range.end);matchSummary();
     }
     search.oninput=()=>{matchIndex=-1;for(const editor of editors.values())paint(editor);};
-    search.onkeydown=event=>{if(event.key==='Enter'){event.preventDefault();navigate(event.shiftKey?-1:1);}else if(event.key==='Escape'){search.value='';search.dispatchEvent(new Event('input'));search.blur();}};
+    search.onkeydown=event=>{if(isWorkflowShortcut(event))return;if(event.key==='Enter'){event.preventDefault();navigate(event.shiftKey?-1:1);}else if(event.key==='Escape'){search.value='';search.dispatchEvent(new Event('input'));search.blur();}};
     next.onclick=()=>navigate(1);previous.onclick=()=>navigate(-1);
     settingsButton.onclick=()=>{settingsPanel.hidden=!settingsPanel.hidden;settingsButton.setAttribute('aria-expanded',String(!settingsPanel.hidden));closePopup();fit(true);};
     const outside=event=>{if(popup&&!popup.contains(event.target)&&event.target!==active?.input)closePopup();};
     const key=event=>{if(event.key==='Escape')closePopup();};
     const scroll=event=>{if([...editors.values()].some(e=>e.input===event.target||e.overlay===event.target))return;if(popup&&!popup.contains(event.target))closePopup();};
-    panel.addEventListener('keydown',event=>event.stopPropagation());panel.addEventListener('pointerdown',event=>event.stopPropagation());
+    panel.addEventListener('keydown',event=>{if(!isWorkflowShortcut(event))event.stopPropagation();});panel.addEventListener('pointerdown',event=>event.stopPropagation());
     document.addEventListener('pointerdown',outside,true);document.addEventListener('keydown',key,true);window.addEventListener('resize',closePopup);window.addEventListener('scroll',scroll,true);
     const observer=new ResizeObserver(()=>{for(const editor of editors.values())paint(editor);fit();});observer.observe(panel);
     const widget=node.addDOMWidget(inputName,'RUYI_PROMPT',panel,{hideOnZoom:false,selectOn:['focus','click'],

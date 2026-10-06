@@ -91,9 +91,10 @@ RuYi LoRA trigger_words STRING ─>             └─ negative ──> Sampler
 - Search highlights all matches; the arrows select and reveal the previous/next match. The main toolbar shows search hits and complete vocabulary-tag hits in enabled text.
 - Settings can hide the negative panel without deleting its text. While hidden, the negative output encodes an empty prompt; a sampler may still require that connection.
 - Local completion searches contiguous tag names/translations, ignoring case and treating spaces and underscores equivalently. Aliases require an exact match and are identified in the suggestion. Dispersed letters and single-letter queries do not produce loose matches.
-- Completion rechecks after about 120ms of inactivity, focus or caret changes. Use Up/Down to select, Enter/Tab to insert, Escape to dismiss. It pauses during IME composition and preserves surrounding prose when inserting.
+- Completion runs about 120ms after a text edit. Focusing, clicking or moving the caret only dismisses suggestions; typing inside an existing word does not query its left-hand prefix. Candidates stay below the source line, even if the window edge clips them. Use Up/Down to select, Enter/Tab to insert, Escape to dismiss. It pauses during IME composition and preserves surrounding prose when inserting.
 - Offline English spelling checks run after about 500ms of inactivity. Existing unchanged typo chips stay in place while typing. Click a chip under **Spelling errors:** to locate the word, replace it, ignore it or add it to the custom dictionary. Known tags and available LoRA trigger words are exempt; suggestions can still require manual judgment.
 - Settings include prompt font size (`10–32px`, default `13px`), underscore mode, vocabulary sources, CSV import and custom words. Vocabulary readiness and record count are shown in settings.
+- The gear opens settings. `Ctrl+Enter` runs the workflow while editing; `Ctrl+Shift+Enter` queues at the front. Ordinary Enter still accepts an active autocomplete candidate.
 - The bundled vocabulary has **508,152 entries**, merging local Danbooru exports, Chinese translations and a public snapshot. See [vocabulary provenance and rebuild instructions](data/prompt/README.md), [Typo.js license](js/prompt/vendor/TYPO-LICENSE.txt) and [dictionary licenses](js/prompt/vendor/EN-LICENSE.txt).
 - Imported CSVs live in this browser's IndexedDB; custom words, section heights, font size and prompt settings travel with the workflow. Re-import CSVs when moving to another browser. Runtime features use local resources and do not automatically fetch updates.
 
@@ -101,10 +102,10 @@ Sections organize and concatenate text. They do **not** implement spatial region
 
 ### RuYi Empty Latent Image
 
-- **Swap width / height** switches orientation while retaining batch and latent type.
+- **Swap W / H** switches orientation while retaining batch and latent type.
 - **Resolution preset** stores only dimensions. **Save preset** always adds the current resolution or selects its existing identical entry; it never overwrites a different selected resolution. **Load** and **Delete** operate on the selected preset. Presets are shared in this browser's local storage.
 - **Resolution alignment** selects multiples of `8`, `16`, `32` or `64`, initially `16`. Manual dimension changes, preset loading, scaling and execution round to the nearest chosen multiple.
-- **Proportional scale** applies a percentage to a stable base. Arrows adjust it by 10 percentage points. Manual width/height edits and preset loading reset the base; **Use current as base** also resets it. Rounding can slightly change the aspect ratio. At the maximum size, both sides are limited together.
+- **Scale** applies a percentage to a stable base. Arrows adjust it by 10 percentage points. Manual width/height edits and preset loading reset the base; **Set base** also resets it. Rounding can slightly change the aspect ratio (hover over the percentage for the reminder). At the maximum size, both sides are limited together.
 - **Latent type** controls the tensor layout: `SD3 / Flux (16)` uses 16 channels; `Anima (16)` adds a single-frame dimension; `SD1 / SDXL (4)` uses the native 4-channel image layout. The default is 16-channel SD3/Flux. Choose the layout expected by the model.
 - Alignment and latent type are independent: alignment controls the image dimensions, while type controls channels/layout. All these layouts use an 8× spatial downscale; choosing alignment 16 does not make the latent 16 channels.
 - Width/height range: `16–16384`; batch: `1–4096`. Connected width/height inputs disable local resolution actions; adjust them upstream.
@@ -114,9 +115,13 @@ Sections organize and concatenate text. They do **not** implement spatial region
 
 1. Connect IMAGE outputs. An additional input appears as connections grow.
 2. Select any two candidates with the **A** and **B** dropdowns.
-3. **Wipe** follows horizontal pointer movement; **Click** switches between A and B.
+3. **Wipe** follows horizontal pointer movement at every zoom level and pauses while you drag anywhere on the zoomed image to pan, including the divider position. In **Click** mode, a click switches between A and B; after zooming, drags pan without switching sides. Small pointer jitter is treated as a click.
 4. Click the **magnifier with a plus** at the preview's bottom right to open the enlarged comparison. A/B selection, wipe/click mode and comparison interactions remain available. Escape, the close button or clicking the backdrop closes it; the chosen state remains in the node.
 5. Each candidate supports its own display name, save-name/path template, auto-save toggle and manual save button. Resolution and PNG file size are displayed below its fields.
+
+The gear next to the comparison-mode button controls the maximum visible image rows: default `2`; `0` shows all rows and grows the node. Connecting an IMAGE input immediately creates a waiting row so naming, paths and auto-save can be prepared before execution. Manual saving and comparison become available after the image arrives. The toolbar has a protected minimum width; A/B selectors are compact.
+
+Wheel over the comparison image to zoom around the pointer, or use the circular-thumb slider at the bottom left. The default range is `100–300%`; **Maximum zoom percentage** in settings changes the upper limit and is saved with the node. `100%` means fitting the image into the current preview area. The reset icon restores 100% and centers the image. Both A/B images share their scale and position; the same controls work in the enlarged view. These controls affect viewing only, preserving the original image and saved resolution.
 
 Without an explicit folder, saves go under `ComfyUI/output/RuYi-Compare/`. The default template is:
 
@@ -188,9 +193,10 @@ Search for the node names listed above. The former **RuYi text-preview** testing
 - 搜索高亮全部匹配；左右箭头定位上一处/下一处。常驻统计显示搜索命中与启用文本中完整词库标签的命中次数。
 - 设置可关闭负面板块，保留已写内容；关闭时负面输出编码空提示词，采样器仍可能要求连接负面条件。
 - 本地联想要求名称或译名连续匹配完整输入，忽略大小写并统一空格与下划线；别名只接受完整精确匹配并注明命中别名，不把分散字母或单字母当作宽泛匹配。
-- 停止输入约 120ms 后查询，移动光标、重新聚焦也可触发。上下箭头选候选，Enter/Tab 插入，Escape 关闭；中文输入法组词期间暂停，插入时保留句子其余内容。
+- 文字编辑后约 120ms 查询；点击、重新聚焦或移动光标只关闭候选，不触发联想。在已有单词内部输入时，不把光标左侧的半个词作为查询。候选框始终位于源文本行下方，允许被窗口边界裁切。上下箭头选候选，Enter/Tab 插入，Escape 关闭；中文输入法组词期间暂停，插入时保留句子其余内容。
 - 停止输入约 500ms 后检查英语拼写，未变化的错词标签不反复清空重建。点击 **拼写错误：** 下的标签，菜单可定位单词、替换、忽略或加入自定义词典。已知 tags 与可用触发词作为例外；建议仍需按语境判断。
 - 设置可调整文字大小（默认 `13px`，`10–32px`）、下划线模式、词库来源，导入 CSV 并编辑自定义词。词库就绪状态和总量移入设置。
+- 点击齿轮打开设置；编辑时 `Ctrl+Enter` 运行工作流，`Ctrl+Shift+Enter` 插入队列最前，普通 Enter 仍用于接受当前联想候选。
 - 内置 **508,152 条**本地词库，合并导出的 Danbooru tags、中文译名及公开快照。来源、构建方式和第三方许可见 [词库说明](data/prompt/README.md)。运行时仅访问本机资源，不自动联网更新。
 - 导入词表保存在当前浏览器 IndexedDB；自定义词、段落高度、字号和设置随工作流保存。更换浏览器后需重新导入词表。
 
@@ -201,7 +207,7 @@ Search for the node names listed above. The former **RuYi text-preview** testing
 - **交换宽高**一键切换横竖构图，保留批次和类型。
 - **分辨率预设**只保存宽高。保存时新增分辨率，完全相同的宽高自动去重；不会覆盖当前选中的其他预设。支持读取、删除，预设保存在当前浏览器本地存储并供不同工作流共用。
 - **分辨率对齐**选择 `8 / 16 / 32 / 64` 的倍数，默认 `16`。手动调整、读取预设、缩放和执行时均按最近倍数取整。
-- **等比缩放**按稳定基准和百分比计算，箭头每次调整 10 个百分点。手动改宽高或读取预设会更新基准，也可点击“以当前为基准”。对齐会造成轻微比例偏差，到达上限时两边一起限制。
+- **等比缩放**按稳定基准和百分比计算，箭头每次调整 10 个百分点。手动改宽高或读取预设会更新基准，也可点击“设为基准”。对齐会造成轻微比例偏差，鼠标悬停百分比可查看说明；到达上限时两边一起限制。
 - **Latent 类型**决定通道和张量布局：默认 `SD3 / Flux (16)`；`Anima (16)` 增加单帧维度；`SD1 / SDXL (4)` 与原生空 Latent 图像的 4 通道布局一致。按模型要求选择。
 - 对齐和类型相互独立：前者约束图像宽高，后者决定通道/布局。它们都按 8 倍空间下采样；对齐选择 16 并不意味着 16 通道。
 - 宽高范围 `16–16384`、批次 `1–4096`。宽高接入连线时禁用本地分辨率操作，请在上游调整。
@@ -210,8 +216,11 @@ Search for the node names listed above. The former **RuYi text-preview** testing
 ### 图像对比与保存
 
 - 连接 IMAGE 输入后自动补充下一输入，使用 A/B 选单切换任意两张。
-- **滑动**模式随指针水平移动对比线；**点击**模式切换 A/B。
+- 连线后立即显示待输入栏位，可提前设置名称、保存路径与自动保存；收到实际图片后沿用这些设置，并启用手动保存和图片对比。
+- 对比方式右侧的齿轮设置可调整最多陈列图片数，默认 `2`；`0` 完整显示所有栏位并延展节点。选单宽度收紧，节点最小宽度保证工具栏完整显示。
+- **滑动**模式在所有缩放比例下均随鼠标水平移动对比线，放大后在图片任意位置（包括分界线处）按住拖动均为平移，期间暂停对比。**点击**模式中单击切换 A/B，放大后拖动则平移而不切换，轻微手抖仍按单击处理。
 - 点击展示区右下角 **加号放大镜**，在放大界面继续选择 A/B、切换模式和对比；Escape、关闭按钮或点击遮罩退出，状态保留。
+- 鼠标滚轮以指针位置为中心缩放，左下角提供圆形滑块和复位图标。默认 `100–300%`，设置中的“最大缩放百分比”可调整上限并随节点保存。100% 指适配当前展示区的大小；复位回到 100% 并居中。两图共用缩放和位置，常态与放大界面均生效；显示缩放不改变原图及保存分辨率。
 - 每张图片可独立设置图像名称、保存文件名/路径、自动保存和手动保存，显示分辨率与 PNG 文件体积。
 - 没有明确文件夹时保存到 `ComfyUI/output/RuYi-Compare/`，默认命名为 `%display_name-date:yyyy-MM-dd_HHmmss%`。
 - 支持 `%display_name%`、`%save_name%`、`%index%`、`%input%`、`%frame%`、`%date:yyyy-MM-dd_HHmmss%`。组合模板保持兼容，日期也可用于文件夹：
@@ -245,11 +254,6 @@ git pull
 也可下载 GitHub ZIP，确保 `custom_nodes/RuYi-Nodes/__init__.py` 直接存在，避免多套一层同名目录。安装或 Python 节点更新后重启 ComfyUI；前端缓存可用 Ctrl+F5 刷新。
 
 旧的 **RuYi 文本监视** 测试节点已移除；旧工作流可改用其他 STRING 显示工具。
-
-## Shared appearance / 统一配色
-
-All four interfaces and their menus use shared grayscale tokens: node `#333333`, groups `#292929`, content `#222222`, controls `#3A3A3A`, border `#505050`, hover `#474747`. Functional green/red, positive/negative and A/B accents remain distinct. Native ComfyUI node chrome retains its own appearance settings.<br>
-四类界面与选单共用灰阶：节点底色 `#333333`、分组 `#292929`、内容区 `#222222`、控件 `#3A3A3A`、边框 `#505050`、悬停 `#474747`。保留添加/删除、正负提示词及 A/B 的功能色；原生节点外壳仍遵循 ComfyUI 外观设置。
 
 ## Changelog and license / 更新记录与许可
 

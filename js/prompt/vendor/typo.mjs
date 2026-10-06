@@ -1,38 +1,14 @@
-/* globals chrome: false */
-/* globals __dirname: false */
-/* globals require: false */
-/* globals Buffer: false */
 /* globals module: false */
 var Typo;
 (function () {
     "use strict";
     /**
-     * Typo constructor.
-     *
-     * @param {string} [dictionary] The locale code of the dictionary being used. e.g.,
-     *                              "en_US". This is only used to auto-load dictionaries.
-     * @param {string} [affData]    The data from the dictionary's .aff file. If omitted
-     *                              and Typo.js is being used in a Chrome extension, the .aff
-     *                              file will be loaded automatically from
-     *                              lib/typo/dictionaries/[dictionary]/[dictionary].aff
-     *                              In other environments, it will be loaded from
-     *                              [settings.dictionaryPath]/dictionaries/[dictionary]/[dictionary].aff
-     * @param {string} [wordsData]  The data from the dictionary's .dic file. If omitted
-     *                              and Typo.js is being used in a Chrome extension, the .dic
-     *                              file will be loaded automatically from
-     *                              lib/typo/dictionaries/[dictionary]/[dictionary].dic
-     *                              In other environments, it will be loaded from
-     *                              [settings.dictionaryPath]/dictionaries/[dictionary]/[dictionary].dic
-     * @param {Object} [settings]   Constructor settings. Available properties are:
-     *                              {string} [dictionaryPath]: path to load dictionary from in non-chrome
-     *                              environment.
-     *                              {Object} [flags]: flag information.
-     *                              {boolean} [asyncLoad]: If true, affData and wordsData will be loaded
-     *                              asynchronously.
-     *                              {Function} [loadedCallback]: Called when both affData and wordsData
-     *                              have been loaded. Only used if asyncLoad is set to true. The parameter
-     *                              is the instantiated Typo object.
-     *
+     * Typo constructor adapted for RuYi-Nodes: dictionary text is preloaded
+     * by worker.mjs. Automatic browser/Node file loading is intentionally absent.
+     * @param {string} dictionary Dictionary locale identifier.
+     * @param {string} affData Contents of the .aff file.
+     * @param {string} wordsData Contents of the .dic file.
+     * @param {Object} [settings] Flags and optional loadedCallback/asyncLoad.
      * @returns {Typo} A Typo object.
      */
     Typo = function (dictionary, affData, wordsData, settings) {
@@ -47,68 +23,14 @@ var Typo;
         this.memoized = {};
         this.loaded = false;
         var self = this;
-        var path;
         // Loop-control variables.
         var i, j, _len, _jlen;
         if (dictionary) {
             self.dictionary = dictionary;
-            // If the data is preloaded, just setup the Typo object.
-            if (affData && wordsData) {
-                setup();
+            if (typeof affData !== 'string' || !affData || typeof wordsData !== 'string' || !wordsData) {
+                throw new Error('RuYi-Nodes requires preloaded dictionary data (.aff and .dic).');
             }
-            else {
-                if (typeof window !== 'undefined') {
-                    // Webpage or browser extension
-                    if (settings.dictionaryPath) {
-                        path = settings.dictionaryPath;
-                    }
-                    else {
-                        path = "typo/dictionaries";
-                    }
-                    // Browser extensions assume that the file is being loaded from the root of the extension.
-                    if (window.chrome && window.chrome.runtime && window.chrome.runtime.getURL) {
-                        path = window.chrome.runtime.getURL(path);
-                    }
-                    else if (window.browser && window.browser.runtime && window.browser.runtime.getURL) {
-                        path = window.browser.runtime.getURL(path);
-                    }
-                }
-                else if (typeof __dirname !== 'undefined') {
-                    // Node
-                    path = __dirname + '/dictionaries';
-                }
-                else {
-                    // Node
-                    path = './dictionaries';
-                }
-                if (!affData)
-                    readDataFile(path + "/" + dictionary + "/" + dictionary + ".aff", setAffData);
-                if (!wordsData)
-                    readDataFile(path + "/" + dictionary + "/" + dictionary + ".dic", setWordsData);
-            }
-        }
-        function readDataFile(url, setFunc) {
-            var response = self._readFile(url, null, settings === null || settings === void 0 ? void 0 : settings.asyncLoad);
-            if (settings === null || settings === void 0 ? void 0 : settings.asyncLoad) {
-                response.then(function (data) {
-                    setFunc(data);
-                });
-            }
-            else {
-                setFunc(response);
-            }
-        }
-        function setAffData(data) {
-            affData = data;
-            if (wordsData) {
-                setup();
-            }
-        }
-        function setWordsData(data) {
-            wordsData = data;
-            if (affData) {
-                setup();
-            }
+            setup();
         }
         function setup() {
             self.rules = self._parseAFF(affData);
@@ -170,63 +92,6 @@ var Typo;
                 }
             }
             return this;
-        },
-        /**
-         * Read the contents of a file.
-         *
-         * @param {string} path The path (relative) to the file.
-         * @param {string} [charset="ISO8859-1"] The expected charset of the file
-         * @param {boolean} async If true, the file will be read asynchronously. For node.js this does nothing, all
-         *        files are read synchronously.
-         * @returns {string} The file data if async is false, otherwise a promise object. If running node.js, the data is
-         *          always returned.
-         */
-        _readFile: function (path, charset, async) {
-            var _a;
-            charset = charset || "utf8";
-            if (typeof XMLHttpRequest !== 'undefined') {
-                var req_1 = new XMLHttpRequest();
-                req_1.open("GET", path, !!async);
-                (_a = req_1.overrideMimeType) === null || _a === void 0 ? void 0 : _a.call(req_1, "text/plain; charset=" + charset);
-                if (!!async) {
-                    var promise = new Promise(function (resolve, reject) {
-                        req_1.onload = function () {
-                            if (req_1.status === 200) {
-                                resolve(req_1.responseText);
-                            }
-                            else {
-                                reject(req_1.statusText);
-                            }
-                        };
-                        req_1.onerror = function () {
-                            reject(req_1.statusText);
-                        };
-                    });
-                    req_1.send(null);
-                    return promise;
-                }
-                else {
-                    req_1.send(null);
-                    return req_1.responseText;
-                }
-            }
-            else if (typeof require !== 'undefined') {
-                // Node.js
-                var fs = require("fs");
-                try {
-                    if (fs.existsSync(path)) {
-                        return fs.readFileSync(path, charset);
-                    }
-                    else {
-                        console.log("Path " + path + " does not exist.");
-                    }
-                }
-                catch (e) {
-                    console.log(e);
-                }
-                return '';
-            }
-            return '';
         },
         /**
          * Parse the rules out from a .aff file.

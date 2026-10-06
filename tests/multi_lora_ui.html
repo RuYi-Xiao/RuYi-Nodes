@@ -11,10 +11,11 @@ const frames = () => new Promise(resolve => requestAnimationFrame(() => requestA
 function equal(actual, expected) {
     if (actual !== expected) throw new Error(`Expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
 }
-function button(panel, text) { return [...panel.querySelectorAll('button')].find(x => x.textContent === text); }
+function button(panel, text) { return [...panel.querySelectorAll('button')].find(x => x.textContent === text || (text==='设置'&&x.dataset.action==='settings')); }
+await test('Settings gear is accessible and surrounding surfaces are transparent',async()=>{const {panel}=createNode();await frames();const gear=panel.querySelector('button[data-action=settings]');equal(gear.getAttribute('aria-label'),'设置');equal(gear.textContent,'');equal(!!gear.querySelector('svg'),true);for(const cls of ['.ruyi-lora-surface','.ruyi-toolbar','.ruyi-list'])equal(getComputedStyle(panel.querySelector(cls)).backgroundColor,'rgba(0, 0, 0, 0)');gear.click();equal(panel.querySelector('.ruyi-settings').hidden,false);});
 function setPickerMode(panel, value) {
     panel.querySelector('.ruyi-picker-mode').click();
-    document.querySelector(`.ruyi-settings-menu [data-value="${value}"]`).click();
+    document.querySelector(`.ruyi-dropdown-menu [data-value="${value}"]`).click();
 }
 function createNode(properties = {}, modelOnly = true) {
     const host = document.createElement('div'); host.className = 'test-node';
@@ -121,6 +122,19 @@ await test('MODEL and CLIP weights remain independent', async () => {
     controls[1].querySelectorAll('button')[1].click();
     equal(JSON.parse(widget.value)[0].strength_model, 1);
     equal(JSON.parse(widget.value)[0].strength_clip, 1.1);
+});
+await test('Filter menu clicks stay inside the LoRA picker and keyboard Escape closes only the menu',async()=>{
+ const {panel}=createNode();await frames();await button(panel,'✚ 添加 LoRA').onclick();await frames();
+ await panel.querySelector('.ruyi-lora-select').onclick(new Event('click'));await frames();
+ const folder=document.querySelector('.ruyi-picker-filter');folder.click();
+ const menu=document.querySelector('.ruyi-dropdown-menu'),option=menu.querySelector('[data-value=Krea2]');
+ equal(menu.getBoundingClientRect().width,folder.getBoundingClientRect().width);
+ option.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,cancelable:true}));option.click();
+ equal(!!document.querySelector('.ruyi-picker'),true);equal(folder.value,'Krea2');
+ folder.click();folder.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));
+ equal(document.querySelector('.ruyi-dropdown-menu'),null);equal(!!document.querySelector('.ruyi-picker'),true);
+ folder.click();document.body.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true}));
+ equal(document.querySelector('.ruyi-picker'),null);equal(document.querySelector('.ruyi-dropdown-menu'),null);
 });
 await test('Workflow restore updates settings and keeps other nodes independent', async () => {
     const {panel, widget, node} = createNode(); await frames();

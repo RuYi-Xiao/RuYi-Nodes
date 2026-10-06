@@ -2,6 +2,28 @@
 
 All notable user-facing changes to **RuYi-Nodes** will be documented in this file.
 
+## 0.2.1 - 2026-10-06
+
+- Removed Typo.js's unused automatic dictionary file loader, including XMLHttpRequest and Node filesystem fallbacks. The worker still preloads bundled dictionaries; spelling checks and suggestions are retained. Missing dictionary text now produces an explicit error.
+- 修复 Registry 对 Typo.js 备用字典加载代码的扫描命中：移除未使用的自动加载逻辑，保留本地字典预加载、拼写检查与建议；字典文本缺失时明确报错。修正集成测试中的另一处 E702 写法，发布包额外排除开发工具。
+- Fixed zoomed wipe panning being intercepted by the hover-following divider. The divider is visual only; dragging anywhere in the image area pans both images while the comparison position stays fixed.
+- 修复滑动对比轴跟随鼠标后拦截放大图像平移的问题；分界线仅作为视觉显示，图片区域任意位置按住拖动均同步平移两图，期间保持对比位置。
+- Image Compare supports pointer-centered wheel zoom, a circular zoom slider and reset control, plus shared A/B panning in both node and enlarged views. The default fit-relative range is 100–300%; the maximum percentage is configurable and saved with the node. Wipe follows pointer movement after zooming and pauses only during image panning; click comparison distinguishes small jitter from drags, including cancelled gestures and displaced releases. The enlarged view's close icon is centered inside a square button.
+- 图像对比常态与放大界面支持滚轮缩放、圆形滑块和复位；放大后可拖动平移，两图共用缩放和位置。默认 100–300%，设置可修改并保存最大百分比；放大后仍可随鼠标移动进行滑动对比，仅平移期间暂停。点击模式区分微抖与拖动，并处理取消操作和释放位置变化；放大窗口关闭图标在方形按钮内居中。
+- Embedded Compare A/B, LoRA settings/filters and Empty Latent preset dropdowns now share scaled typography, consistent spacing, keyboard navigation and popup cleanup.
+- Empty Latent uses aligned resolution/preset/scale rows, equal preset action buttons and compact 28px controls. Rounding help is available on hover; alignment and latent layout remain independent.
+- 节点内部下拉菜单统一字号、间距、画布缩放与键盘操作。空 Latent 按分辨率、预设和缩放对齐排版，预设操作按钮等宽，取整说明移至悬浮提示；分辨率对齐与 Latent 类型保持独立。
+- Prompt inputs preserve ComfyUI's Ctrl/Meta+Enter queue shortcuts, including front-of-queue and interrupt combinations, without accepting autocomplete candidates.
+- Settings buttons now share an accessible gear icon. Image Compare settings control the maximum visible save rows (default 2, 0 unlimited), with node growth and protected toolbar/content dimensions. A/B selectors use half their previous width.
+- Image input connections create waiting save rows before execution, allowing names, paths and auto-save to be prepared. Incoming images retain those settings. Current images are no longer truncated by the 128-item history persistence limit.
+- LoRA's outer surface, toolbar and list backgrounds are transparent, retaining the individual card surfaces.
+- Prompt's outer panel is transparent too; paragraph headers and text areas retain their shared grayscale depth.
+- 提示词输入框保留 ComfyUI 的 Ctrl/Meta+Enter 运行快捷键。设置按钮统一齿轮；图像对比新增陈列数量设置（默认 2，0 不限），连接即生成可预设保存参数的待输入栏位，选单宽度减半并保护最小布局尺寸。LoRA 移除多余的外层与按钮栏底色。
+- Prompt completion now responds to text edits only. Clicking, refocusing and caret navigation dismiss candidates without reopening them; editing inside a word does not search its incomplete left-hand prefix.
+- Completion candidates follow the rendered source line below the caret, accounting for wrapped text, paragraph scrolling and canvas zoom. Window edges can clip the popup instead of pushing it upward over the prompt.
+- 提示词联想仅在编辑文字后触发；点击、重新聚焦和移动光标只关闭候选，不以单词左半部分进行联想。候选框跟随源文本行显示在下方，适配换行、滚动及缩放，取消窗口边界引起的向上遮挡。
+- Split semicolon-separated statements in the prompt backend test to remove the registry's E702 warning.
+
 ## 0.2.0 - 2026-10-02
 
 ### Added / 新增

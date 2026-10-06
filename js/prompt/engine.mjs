@@ -84,6 +84,8 @@ export function tokenAt(text, caret) {
 
 export function completionAt(rows, text, caret, sources) {
     const token = tokenAt(text, caret);
+    // Only suggest at a word boundary, never for the left half of an existing word.
+    if (/^[\p{L}\p{N}_'’-]/u.test(text.slice(caret,caret+2))) return {token,options:[]};
     const query = fragment => fragment.trim().length >= 2 && fragment.length <= 100 ? complete(rows, fragment, sources) : [];
     let end = caret;
     while (end < text.length && !/[\s,.!?;:，。！？；：]/.test(text[end])) end++;

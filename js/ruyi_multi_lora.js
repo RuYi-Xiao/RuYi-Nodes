@@ -1,5 +1,7 @@
 import { app } from "../../scripts/app.js";
 import './theme.mjs';
+import {settingsIcon} from './ui_controls.mjs';
+import {createDropdown} from './dropdown.mjs';
 
 const RUYI_WIDGET_TYPE = "RUYI_LORA_STACK";
 const RUYI_NODE_NAMES = new Set([
@@ -150,13 +152,13 @@ function installStyles() {
         box-sizing: border-box;
         min-width: 0;
         color: inherit;
-        background: var(--ruyi-node-bg);
+        background: transparent;
         padding: 4px 12px 7px 10px;
         overflow: hidden;
       }
       .ruyi-toolbar {
         display: grid;
-        background: var(--ruyi-group-bg);
+        background: transparent;
         grid-template-columns: max-content max-content max-content 1fr max-content;
         gap: 6px;
         align-items: center;
@@ -290,46 +292,8 @@ function installStyles() {
         cursor: pointer;
       }
       .ruyi-picker-mode { display: inline-flex; align-items: center; justify-content: space-between; gap: 8px; }
-      .ruyi-picker-mode::after {
-        content: "";
-        width: 6px;
-        height: 6px;
-        flex-shrink: 0;
-        border-right: 1.5px solid currentColor;
-        border-bottom: 1.5px solid currentColor;
-        transform: rotate(45deg);
-        margin-top: -3px;
-        margin-right: 2px;
-      }
-      .ruyi-settings-menu {
-        box-sizing: border-box;
-        position: fixed;
-        z-index: 100020;
-        border: 1px solid var(--ruyi-border);
-        border-radius: 4px;
-        overflow: hidden;
-        background: var(--ruyi-control-bg);
-        color: var(--ruyi-text);
-        font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-      }
-      .ruyi-settings-option {
-        box-sizing: border-box;
-        display: block;
-        width: 100%;
-        border: 0;
-        padding: 6px var(--ruyi-menu-padding);
-        background: transparent;
-        color: inherit;
-        font: inherit;
-        text-align: left;
-        cursor: pointer;
-      }
-      .ruyi-settings-option:hover,
-      .ruyi-settings-option:focus-visible,
-      .ruyi-settings-option[aria-selected="true"] { background: #505050; }
-
       .ruyi-list {
-        background: var(--ruyi-group-bg);
+        background: transparent;
         box-sizing: border-box;
         width: 100%;
         min-width: 0;
@@ -1073,18 +1037,16 @@ function openLoraPicker(anchor, catalog, selectedLora, onChoose, settings, onSet
     search.placeholder = tr("filterPlaceholder");
     search.value = "";
 
-    const folderFilter = make("select", "ruyi-picker-filter");
-    const modelFilter = make("select", "ruyi-picker-filter");
+    const folderFilter = createDropdown({label:tr('allFolders'),className:'ruyi-picker-filter'});
+    const modelFilter = createDropdown({label:tr('allBaseModels'),className:'ruyi-picker-filter'});
 
     const folderValues = [...new Set(catalog.map(x => x.folder || "").filter(Boolean))]
         .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }));
     const modelValues = [...new Set(catalog.map(x => x.model_type || x.base_model || "Unknown"))]
         .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }));
 
-    folderFilter.append(new Option(tr("allFolders"), ""));
-    for (const value of folderValues) folderFilter.append(new Option(value, value));
-    modelFilter.append(new Option(tr("allBaseModels"), ""));
-    for (const value of modelValues) modelFilter.append(new Option(value || tr("unknown"), value || "Unknown"));
+    folderFilter.setOptions([{value:'',label:tr('allFolders')},...folderValues.map(value=>({value,label:value}))]);
+    modelFilter.setOptions([{value:'',label:tr('allBaseModels')},...modelValues.map(value=>({value:value||'Unknown',label:value||tr('unknown')}))]);
 
     searchWrap.append(search, folderFilter, modelFilter);
     if (settings.pickerMode === "last") {
@@ -1247,7 +1209,7 @@ function openLoraPicker(anchor, catalog, selectedLora, onChoose, settings, onSet
     };
 
     const onDocPointer = e => {
-        if (!picker.contains(e.target) && !anchor.contains(e.target)) cleanup();
+        if (!picker.contains(e.target) && !anchor.contains(e.target) && !folderFilter.containsTarget(e.target) && !modelFilter.containsTarget(e.target)) cleanup();
     };
     const onResize = () => placePicker(picker, anchor);
     const onKey = e => {
@@ -1274,6 +1236,7 @@ function openLoraPicker(anchor, catalog, selectedLora, onChoose, settings, onSet
     };
 
     function cleanup() {
+        folderFilter.dispose(); modelFilter.dispose();
         prefetchGeneration++;
         if (prefetchTimer) {
             clearTimeout(prefetchTimer);
@@ -1348,7 +1311,7 @@ function createRuYiLoraWidget(node, inputName) {
     visibleCountWrap.append(visiblePrefix, createNumberControl(visibleCountInput, () => 1), visibleSuffix);
     const filler = make("div", "");
     const settingsBtn = make("button", "", tr("settings"));
-    settingsBtn.setAttribute("aria-expanded", "false");
+    settingsIcon(settingsBtn, tr("settings"));
     toolbar.append(addBtn, toggleBtn, refreshBtn, filler, settingsBtn);
     surface.append(toolbar);
 
@@ -1384,66 +1347,13 @@ function createRuYiLoraWidget(node, inputName) {
     stepLabel.append(createNumberControl(stepInput, () => 0.01));
     settingsPanel.append(visibleCountWrap, stepLabel);
     const pickerModeLabel = make("div", "ruyi-setting-field", tr("pickerMode"));
-    const pickerModeButton = make("button", "ruyi-picker-mode");
-    pickerModeButton.type = "button";
-    pickerModeButton.setAttribute("aria-label", tr("pickerMode"));
-    pickerModeButton.setAttribute("aria-haspopup", "listbox");
-    pickerModeButton.setAttribute("aria-expanded", "false");
+    const pickerModeButton = createDropdown({label:tr('pickerMode'),className:'ruyi-picker-mode',options:[{value:'default',label:tr('pickerDefault')},{value:'last',label:tr('pickerLast')}]});
     const syncPickerMode = () => {
-        pickerModeButton.textContent = tr(settings.pickerMode === "last" ? "pickerLast" : "pickerDefault");
-        pickerModeButton.dataset.value = settings.pickerMode;
+        pickerModeButton.value = settings.pickerMode;
     };
     syncPickerMode();
-    let settingsMenu = null;
-    const closeSettingsMenu = () => {
-        settingsMenu?.remove();
-        settingsMenu = null;
-        pickerModeButton.setAttribute("aria-expanded", "false");
-        document.removeEventListener("pointerdown", onSettingsPointer, true);
-        document.removeEventListener("keydown", onSettingsKey, true);
-        window.removeEventListener("resize", closeSettingsMenu);
-        window.removeEventListener("scroll", closeSettingsMenu, true);
-    };
-    const onSettingsPointer = event => {
-        if (!settingsMenu?.contains(event.target) && !pickerModeButton.contains(event.target)) closeSettingsMenu();
-    };
-    const onSettingsKey = event => {
-        if (event.key === "Escape") { closeSettingsMenu(); pickerModeButton.focus(); }
-    };
-    pickerModeButton.onclick = () => {
-        if (settingsMenu) { closeSettingsMenu(); return; }
-        const rect = pickerModeButton.getBoundingClientRect();
-        const scale = rect.width / pickerModeButton.offsetWidth;
-        settingsMenu = make("div", "ruyi-settings-menu");
-        settingsMenu.setAttribute("role", "listbox");
-        settingsMenu.style.width = `${rect.width}px`;
-        settingsMenu.style.fontSize = `${parseFloat(getComputedStyle(pickerModeButton).fontSize) * scale}px`;
-        settingsMenu.style.setProperty("--ruyi-menu-padding", `${8 * scale}px`);
-        for (const [value, key] of [["default", "pickerDefault"], ["last", "pickerLast"]]) {
-            const option = make("button", "ruyi-settings-option", tr(key));
-            option.type = "button";
-            option.dataset.value = value;
-            option.setAttribute("role", "option");
-            option.setAttribute("aria-selected", String(value === settings.pickerMode));
-            option.onclick = () => {
-                settings.pickerMode = value;
-                syncPickerMode();
-                closeSettingsMenu();
-                pickerModeButton.focus();
-                app.graph?.setDirtyCanvas?.(true, true);
-            };
-            settingsMenu.append(option);
-        }
-        document.body.append(settingsMenu);
-        settingsMenu.style.left = `${Math.max(0, Math.min(rect.left, window.innerWidth - rect.width))}px`;
-        const menuHeight = settingsMenu.getBoundingClientRect().height;
-        settingsMenu.style.top = `${rect.bottom + menuHeight > window.innerHeight ? Math.max(0, rect.top - menuHeight) : rect.bottom}px`;
-        pickerModeButton.setAttribute("aria-expanded", "true");
-        document.addEventListener("pointerdown", onSettingsPointer, true);
-        document.addEventListener("keydown", onSettingsKey, true);
-        window.addEventListener("resize", closeSettingsMenu);
-        window.addEventListener("scroll", closeSettingsMenu, true);
-    };
+    const closeSettingsMenu = () => pickerModeButton.close();
+    pickerModeButton.addEventListener('change',()=>{settings.pickerMode=pickerModeButton.value;app.graph?.setDirtyCanvas?.(true,true);});
     pickerModeLabel.append(pickerModeButton);
     settingsPanel.append(pickerModeLabel);
     surface.append(settingsPanel);
@@ -2067,7 +1977,7 @@ function createRuYiLoraWidget(node, inputName) {
     render();
 
     widget.onRemove = () => {
-        closeSettingsMenu();
+        pickerModeButton.dispose();
         disposed = true;
         layoutMeasureToken++;
         remountObserver?.disconnect();

@@ -6,7 +6,7 @@ const stub = `export const app = {extensions:[], extensionManager:{setting:{get(
 http.createServer((request,response)=>{
     const url = new URL(request.url,'http://127.0.0.1');
     if(url.pathname==='/scripts/app.js'){response.setHeader('Content-Type','text/javascript');response.end(stub);return;}
-    let file = path.join(__dirname,'latent_ui.html');
+    let file = path.join(__dirname,url.pathname==='/layout_demo.html'?'runtime/latent-layout-demo.html':'latent_ui.html');
     if(url.pathname.startsWith('/extensions/RuYi/')){
         file=path.resolve(root,'js',url.pathname.slice('/extensions/RuYi/'.length));
         if(!file.startsWith(path.join(root,'js')+path.sep)){response.writeHead(403);response.end();return;}

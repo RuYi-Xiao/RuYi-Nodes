@@ -15,7 +15,7 @@ http.createServer((request, response) => {
     const url = new URL(request.url, 'http://127.0.0.1');
     if (url.pathname === '/scripts/app.js') {
         response.setHeader('Content-Type', 'text/javascript'); response.end(appStub);
-    } else if (url.pathname === '/extensions/RuYi/ruyi_multi_lora.js' || url.pathname === '/extensions/RuYi/theme.mjs') {
+    } else if (['ruyi_multi_lora.js','theme.mjs','ui_controls.mjs','dropdown.mjs'].some(name=>url.pathname==='/extensions/RuYi/'+name)) {
         response.setHeader('Content-Type', 'text/javascript');
         response.end(fs.readFileSync(path.join(__dirname, '../js', path.basename(url.pathname))));
     } else if (url.pathname === '/ruyi_nodes/loras') {

@@ -1,6 +1,10 @@
 import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
 import './theme.mjs';
+import {settingsIcon} from './ui_controls.mjs';
+import {createDropdown} from './dropdown.mjs';
+import {normalizeZoomLimit} from './compare/camera.mjs';
+import {createCompareViewport} from './compare/viewport.mjs';
 
 const NODE_NAME = "RuYiImageCompare";
 const STATE_KEY = "ruyi_image_compare";
@@ -37,6 +41,15 @@ const I18N = {
         copyImage: "Copy image",
         enlarge: "Enlarge image comparison",
         close: "Close",
+        settings: "Settings",
+        visibleImages: "Maximum visible images",
+        unlimitedImages: "0 shows all images and expands the node",
+        waitingImage: "Waiting for image",
+        zoom: "Image zoom percentage",
+        resetView: "Reset zoom and position",
+        maxZoom: "Maximum zoom percentage",
+        zoomHelp: "100% fits the preview area; wheel to zoom. Move the pointer to compare; after zooming, drag the image to pan.",
+        panHelp: "Move the pointer to compare; drag the image to pan. Comparison pauses while panning. Use reset to fit and center.",
         templateHelp: "RuYi variables:\nUser fields: %display_name%  %save_name%\nAuto-generated: %index%  %input%  %frame%  %date:yyyy-MM-dd_HHmmss%\nRelative folder example: Compare/%display_name-date:yyyy-MM-dd_HHmmss%\nAbsolute path example: C:\\YourFolder\\%display_name-date:yyyy-MM-dd_HHmmss%",
     },
     zh: {
@@ -62,6 +75,15 @@ const I18N = {
         copyImage: "复制图片",
         enlarge: "放大图像对比",
         close: "关闭",
+        settings: "设置",
+        visibleImages: "最多显示图片数",
+        unlimitedImages: "0 表示不限数量，节点随图片栏位延展",
+        waitingImage: "等待图像输入",
+        zoom: "图像缩放百分比",
+        resetView: "复位缩放与位置",
+        maxZoom: "最大缩放百分比",
+        zoomHelp: "100% 为适配展示区的大小；滚轮缩放，移动鼠标对比，放大后按住拖动图像平移。",
+        panHelp: "移动鼠标对比，按住拖动图像平移；平移期间暂停对比，复位后适配展示区并居中。",
         templateHelp: "RuYi 可用变量：\n用户填写：%display_name%  %save_name%\n自动生成：%index%  %input%  %frame%  %date:yyyy-MM-dd_HHmmss%\n相对子目录示例：对比结果/%display_name-date:yyyy-MM-dd_HHmmss%\n绝对路径示例：C:\\YourFolder\\%display_name-date:yyyy-MM-dd_HHmmss%",
     },
 };
@@ -251,7 +273,7 @@ function formatBytes(bytes) {
 }
 
 function defaultState() {
-    return { mode: "wipe", aKey: null, bKey: null, toggleSide: "A", displayNames: {}, saveNames: {}, autoSaveKeys: {}, filenameTemplate: DEFAULT_TEMPLATE };
+    return { mode: "wipe", aKey: null, bKey: null, toggleSide: "A", maxVisibleImages: 2, maxZoomPercent: 300, displayNames: {}, saveNames: {}, autoSaveKeys: {}, filenameTemplate: DEFAULT_TEMPLATE };
 }
 
 function normalizeMap(value, maxLength = MAX_LABEL_LENGTH) {
@@ -280,12 +302,34 @@ function getState(node) {
     const current = node.properties[STATE_KEY] || {};
     const state = { ...defaultState(), ...current };
     state.mode = state.mode === "toggle" ? "toggle" : "wipe";
+    state.maxVisibleImages = normalizeVisibleImages(state.maxVisibleImages);
+    state.maxZoomPercent = normalizeZoomLimit(state.maxZoomPercent);
     state.displayNames = normalizeMap(state.displayNames || state.inputNames);
     state.saveNames = normalizeMap(state.saveNames, 256);
     state.autoSaveKeys = normalizeAuto(state.autoSaveKeys);
     state.filenameTemplate = DEFAULT_TEMPLATE;
     node.properties[STATE_KEY] = state;
     return state;
+}
+function normalizeVisibleImages(value) {
+    const number = Number(value);
+    return value != null && value !== '' && Number.isFinite(number) && number >= 0 ? Math.floor(number) : 2;
+}
+
+// Autogrow IMAGE sockets in current ComfyUI are named images.image_N;
+// keep compatibility with older workflows that use image_N directly.
+function compareRows(node, items) {
+    const rows = [...items];
+    const received = new Set(items.map(item => item.input));
+    for (const input of node.inputs || []) {
+        const match = /^(?:images\.)?image_(\d+)$/.exec(input.name || '');
+        if (!match || input.type !== 'IMAGE' || input.link == null) continue;
+        const number = Number(match[1]);
+        if (number < 1 || received.has(number)) continue;
+        received.add(number);
+        rows.push({ key: `${number}:0`, input: number, frame: 0, pending: true });
+    }
+    return rows.sort((a, b) => a.input - b.input || a.frame - b.frame);
 }
 function manifestPayload(state) {
     return JSON.stringify({ displayNames: state.displayNames, saveNames: state.saveNames, autoSaveKeys: Object.keys(state.autoSaveKeys).filter((k) => state.autoSaveKeys[k]), filenameTemplate: DEFAULT_TEMPLATE });
@@ -318,9 +362,9 @@ function cloneViewInfo(info) {
     };
 }
 
-function normalizePersistedCompareItems(items) {
+function normalizePersistedCompareItems(items, limit = MAX_PERSISTED_ITEMS) {
     if (!Array.isArray(items)) return [];
-    return items.slice(0, MAX_PERSISTED_ITEMS).map((item) => {
+    return items.slice(0, limit).map((item) => {
         const preview = cloneViewInfo(item?.preview);
         const thumb = cloneViewInfo(item?.thumb);
         if (!item?.key || !preview || !thumb) return null;
@@ -403,9 +447,9 @@ function makeBtn(label) {
     el.addEventListener("pointerleave", () => { el.style.background = "var(--ruyi-control-bg)"; });
     return el;
 }
-function makeSelect() {
-    const el = document.createElement("select");
-    Object.assign(el.style, { height: "28px", minWidth: "170px", padding: "0 8px", border: "1px solid var(--ruyi-border)", borderRadius: "5px", background: "var(--ruyi-control-bg)", color: "var(--ruyi-text)", font: "12px/1 system-ui, -apple-system, Segoe UI, sans-serif" });
+function makeSelect(label) {
+    const el = createDropdown({label});
+    Object.assign(el.style, { boxSizing: "border-box", height: "28px", width: "85px", minWidth: "85px", flex: "0 0 85px", padding: "0 8px", border: "1px solid var(--ruyi-border)", borderRadius: "5px", background: "var(--ruyi-control-bg)", color: "var(--ruyi-text)", font: "12px/1 system-ui, -apple-system, Segoe UI, sans-serif" });
     return el;
 }
 function makeTextInput() {
@@ -417,18 +461,38 @@ function makeTextInput() {
 
 function makeCompareWidget(node) {
     const container = document.createElement("div");
-    Object.assign(container.style, { width: "100%", height: "100%", display: "flex", flexDirection: "column", overflow: "hidden", border: "1px solid var(--ruyi-border)", borderRadius: "6px", background: "var(--ruyi-group-bg)", color: "var(--ruyi-text)", font: "12px/1.25 system-ui, -apple-system, Segoe UI, sans-serif" });
+    Object.assign(container.style, { boxSizing: "border-box", width: "100%", height: "100%", display: "flex", flexDirection: "column", overflow: "hidden", border: "1px solid var(--ruyi-border)", borderRadius: "6px", background: "var(--ruyi-group-bg)", color: "var(--ruyi-text)", font: "12px/1.25 system-ui, -apple-system, Segoe UI, sans-serif" });
 
     const toolbar = document.createElement("div");
-    Object.assign(toolbar.style, { display: "flex", gap: "8px", alignItems: "center", padding: "8px", borderBottom: "1px solid var(--ruyi-border)", background: "var(--ruyi-group-bg)" });
+    toolbar.dataset.compareToolbar = '';
+    Object.assign(toolbar.style, { display: "flex", flex: "0 0 auto", gap: "8px", alignItems: "center", padding: "8px", borderBottom: "1px solid var(--ruyi-border)", background: "var(--ruyi-group-bg)", whiteSpace: "nowrap" });
     const aLabel = document.createElement("span"); aLabel.textContent = tr("selectA");
     const bLabel = document.createElement("span"); bLabel.textContent = tr("selectB");
-    const aSelect = makeSelect();
-    const bSelect = makeSelect();
+    const aSelect = makeSelect(tr('selectA'));
+    const bSelect = makeSelect(tr('selectB'));
     const modeButton = makeBtn(tr("wipe"));
+    modeButton.style.flexShrink = '0';
+    const settingsButton = settingsIcon(makeBtn(''), tr('settings'));
     const spacer = document.createElement("div"); spacer.style.flex = "1 1 auto";
-    toolbar.append(aLabel, aSelect, bLabel, bSelect, spacer, modeButton);
+    toolbar.append(aLabel, aSelect, bLabel, bSelect, spacer, modeButton, settingsButton);
     container.appendChild(toolbar);
+
+    const settingsPanel = document.createElement('div'); settingsPanel.hidden = true;
+    Object.assign(settingsPanel.style, {flex: '0 0 auto', padding: '8px', borderBottom: '1px solid var(--ruyi-border)'});
+    const countLabel = document.createElement('label');
+    Object.assign(countLabel.style, {display: 'flex', alignItems: 'center', gap: '8px'});
+    const countText = document.createElement('span'); countText.textContent = tr('visibleImages');
+    const visibleCount = document.createElement('input'); visibleCount.type = 'number'; visibleCount.min = '0'; visibleCount.step = '1';
+    visibleCount.setAttribute('aria-label', tr('visibleImages'));
+    Object.assign(visibleCount.style, {boxSizing: 'border-box', width: '62px', height: '28px', padding: '3px 6px', textAlign: 'center', border: '1px solid var(--ruyi-border)', borderRadius: '5px', background: 'var(--ruyi-control-bg)', color: 'inherit', font: 'inherit'});
+    const countHelp = document.createElement('div'); countHelp.textContent = tr('unlimitedImages');
+    Object.assign(countHelp.style, {marginTop: '6px', color: 'var(--ruyi-muted)'});
+    countLabel.append(countText, visibleCount); settingsPanel.append(countLabel, countHelp); container.append(settingsPanel);
+    const zoomLabel=document.createElement('label');Object.assign(zoomLabel.style,{display:'flex',alignItems:'center',gap:'8px',marginTop:'10px'});
+    const zoomText=document.createElement('span');zoomText.textContent=tr('maxZoom');
+    const maxZoom=document.createElement('input');maxZoom.type='number';maxZoom.min='100';maxZoom.step='10';maxZoom.setAttribute('aria-label',tr('maxZoom'));
+    Object.assign(maxZoom.style,{boxSizing:'border-box',width:'72px',height:'28px',padding:'3px 6px',textAlign:'center',border:'1px solid var(--ruyi-border)',borderRadius:'5px',background:'var(--ruyi-control-bg)',color:'inherit',font:'inherit'});
+    zoomLabel.append(zoomText,maxZoom,' %');settingsPanel.append(zoomLabel);
 
     const preview = document.createElement("div");
     Object.assign(preview.style, { position: "relative", display: "flex", flexDirection: "column", flex: "1 1 auto", minHeight: "240px" });
@@ -447,29 +511,77 @@ function makeCompareWidget(node) {
     preview.appendChild(enlargeButton);
 
     const list = document.createElement("div");
-    Object.assign(list.style, { flex: "0 0 286px", overflowY: "auto", overflowX: "hidden", padding: "8px", display: "flex", flexDirection: "column", gap: "8px", background: "var(--ruyi-group-bg)", borderTop: "1px solid var(--ruyi-border)" });
+    list.dataset.compareList = '';
+    Object.assign(list.style, {boxSizing: 'border-box', flex: "0 0 0px", overflowY: "auto", overflowX: "hidden", padding: "8px", display: "flex", flexDirection: "column", gap: "8px", background: "var(--ruyi-group-bg)", borderTop: "1px solid var(--ruyi-border)" });
     container.appendChild(list);
 
-    const widget = node.addDOMWidget("ruyi_image_compare_widget", "ruyi_image_compare_widget", container, { hideOnZoom: false, canvasOnly: true, getMinHeight: () => 470, getMaxHeight: () => 5000 });
+    let minimumWidth = 480, minimumHeight = 470, disposed = false, layoutQueued = false, previousMinimum = 0, exactFit = false;
+    const widget = node.addDOMWidget("ruyi_image_compare_widget", "ruyi_image_compare_widget", container, { hideOnZoom: false, canvasOnly: true, getMinHeight: () => minimumHeight, getMaxHeight: () => Number.POSITIVE_INFINITY });
+    // Keep the native growable DOM-widget path. A computeSize override makes
+    // LiteGraph classify this as fixed-height and wastes manual node growth.
+    const originalLayoutSize = widget.computeLayoutSize;
+    widget.computeLayoutSize = function (...args) {return {...originalLayoutSize?.apply(this, args), minWidth: minimumWidth - 32, minHeight: minimumHeight, maxHeight: Number.POSITIVE_INFINITY};};
     widget.serialize = false; widget.parent = node; widget.items = []; widget.fullCache = new Map(); widget.renderGeneration = 0; widget.split = 0.5; widget.state = getState(node);
     widget.savedStatus = new Map();
     widget.itemContentIds = new Map();
+    const viewport=createCompareViewport(stage,preview,{
+        getMode:()=>widget.state.mode,getMaxPercent:()=>widget.state.maxZoomPercent,
+        onWipe:applyWipePosition,onToggle:()=>{widget.state.toggleSide=widget.state.toggleSide==='A'?'B':'A';saveState(node,widget.state);renderPreview();},
+        labels:{reset:tr('resetView'),zoom:tr('zoom'),wheel:tr('zoomHelp'),pan:tr('panHelp')},
+    });
 
     let lightbox = null;
+    function fit(exact = false) {
+        exactFit ||= exact;
+        if (layoutQueued || disposed) return;
+        layoutQueued = true;
+        requestAnimationFrame(() => {
+            layoutQueued = false;
+            if (disposed || !container.isConnected) return;
+            const rows = [...list.children];
+            const count = widget.state.maxVisibleImages || rows.length;
+            const shown = rows.slice(0, count);
+            const listHeight = shown.length ? Math.ceil(17 + shown.reduce((sum, row) => sum + row.offsetHeight, 0) + 8 * (shown.length - 1)) : 0;
+            list.style.display = rows.length ? 'flex' : 'none';
+            list.style.flexBasis = `${listHeight}px`;
+            list.style.height = `${listHeight}px`;
+            const controlsWidth = [...toolbar.children].filter(child => child !== spacer).reduce((sum, child) => sum + child.offsetWidth, 0);
+            minimumWidth = Math.max(480, Math.ceil(controlsWidth + 6 * 8 + 16 + 2 + 32));
+            minimumHeight = 2 + 45 + (settingsPanel.hidden ? 0 : settingsPanel.offsetHeight) + 240 + listHeight;
+            const height = Math.ceil(node.computeSize?.()[1] || minimumHeight + 70 + (node.inputs?.length || 0) * 20);
+            node.min_size = [minimumWidth, height];
+            const shrink = exactFit || (previousMinimum && node.size?.[1] <= previousMinimum + 1);
+            const next = [Math.max(minimumWidth, node.size?.[0] || 0), shrink ? height : Math.max(height, node.size?.[1] || 0)];
+            previousMinimum = height; exactFit = false;
+            if (next[0] !== node.size?.[0] || next[1] !== node.size?.[1]) node.setSize?.(next);
+            node.setDirtyCanvas?.(true, true);
+        });
+    }
+    const observer = new ResizeObserver(() => fit()); observer.observe(container);
+    widget.fit = fit;
+    widget.refreshConnections = () => {if (disposed) return; renderList(); fit();};
+    settingsButton.addEventListener('click', () => { settingsPanel.hidden = !settingsPanel.hidden; settingsButton.setAttribute('aria-expanded', String(!settingsPanel.hidden)); fit(); });
+    visibleCount.addEventListener('change', () => {widget.state.maxVisibleImages = normalizeVisibleImages(visibleCount.value); visibleCount.value = String(widget.state.maxVisibleImages); saveState(node, widget.state); fit(true);});
+    maxZoom.addEventListener('change',()=>{widget.state.maxZoomPercent=normalizeZoomLimit(maxZoom.value,widget.state.maxZoomPercent);maxZoom.value=String(widget.state.maxZoomPercent);saveState(node,widget.state);viewport.refresh();});
     function closeLightbox(restoreFocus = true) {
+        aSelect.close(); bSelect.close();
         if (!lightbox) return;
+        viewport.cancelGesture();
         const { overlay, previousFocus, previewMinHeight, stageMinHeight, toolbarWrap } = lightbox;
         document.removeEventListener("keydown", lightbox.onKeyDown, true);
-        container.insertBefore(toolbar, list); container.insertBefore(preview, list);
+        container.insertBefore(toolbar, list); container.insertBefore(settingsPanel, list); container.insertBefore(preview, list);
         preview.style.minHeight = previewMinHeight; stage.style.minHeight = stageMinHeight; toolbar.style.flexWrap = toolbarWrap;
         enlargeButton.style.display = "flex";
         overlay.remove(); lightbox = null;
+        fit();
+        viewport.refresh();
         if (activeCompareLightboxClose === closeLightbox) activeCompareLightboxClose = null;
         if (restoreFocus && previousFocus?.isConnected) previousFocus.focus({ preventScroll: true });
         node.setDirtyCanvas?.(true, true);
     }
     function openLightbox() {
         if (lightbox || enlargeButton.disabled) return;
+        viewport.cancelGesture();
         const previousFocus = document.activeElement;
         activeCompareLightboxClose?.(false);
         const overlay = document.createElement("div");
@@ -480,14 +592,16 @@ function makeCompareWidget(node) {
         const header = document.createElement("div");
         Object.assign(header.style, { display: "flex", alignItems: "center", justifyContent: "space-between", gap: "16px", padding: "10px 12px", flex: "0 0 auto" });
         const title = document.createElement("span"); title.textContent = tr("enlarge");
-        const closeButton = makeBtn("×"); closeButton.title = tr("close"); closeButton.setAttribute("aria-label", tr("close"));
-        Object.assign(closeButton.style, { width: "32px", fontSize: "22px" });
+        const closeButton = makeBtn(""); closeButton.title = tr("close"); closeButton.setAttribute("aria-label", tr("close"));
+        closeButton.innerHTML='<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+        Object.assign(closeButton.style, { boxSizing:"border-box",width:"32px",height:"32px",padding:"0",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:"0" });
         closeButton.addEventListener("click", () => closeLightbox());
-        header.append(title, closeButton); panel.append(header, toolbar, preview); overlay.appendChild(panel);
+        header.append(title, closeButton); panel.append(header, toolbar, settingsPanel, preview); overlay.appendChild(panel);
         const onKeyDown = (event) => {
+            if (event.key === 'Escape' && [aSelect,bSelect].some(control => control.getAttribute('aria-expanded') === 'true')) return;
             if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); closeLightbox(); return; }
             if (event.key !== "Tab") return;
-            const controls = [closeButton, aSelect, bSelect, modeButton];
+            const controls = [closeButton, aSelect, bSelect, modeButton, settingsButton, ...(!settingsPanel.hidden ? [visibleCount,maxZoom] : []),viewport.reset,viewport.range].filter(control=>!control.disabled);
             const first = controls[0], last = controls[controls.length - 1];
             if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
             else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
@@ -499,6 +613,7 @@ function makeCompareWidget(node) {
         for (const type of ["pointerdown", "pointermove", "pointerup", "wheel", "keydown"]) overlay.addEventListener(type, (event) => event.stopPropagation());
         document.body.appendChild(overlay); document.addEventListener("keydown", onKeyDown, true);
         activeCompareLightboxClose = closeLightbox;
+        viewport.refresh();
         closeButton.focus({ preventScroll: true });
     }
 
@@ -520,6 +635,7 @@ function makeCompareWidget(node) {
     }
     function makeStageImage(image) {
         const el = document.createElement("img"); if (image?.src) el.src = image.src;
+        el.draggable=false;
         Object.assign(el.style, { position: "absolute", inset: "0", width: "100%", height: "100%", objectFit: "contain", objectPosition: "center", display: "block", pointerEvents: "none" });
         return el;
     }
@@ -530,17 +646,14 @@ function makeCompareWidget(node) {
     }
 
     function updateTopControls() {
+        visibleCount.value = String(widget.state.maxVisibleImages);
+        maxZoom.value=String(widget.state.maxZoomPercent);viewport.refresh();
         const counts = itemCounts(widget.items);
         const { a, b } = selectResolved(widget.items, widget.state);
         const refill = (select, currentKey, otherKey) => {
-            const prev = currentKey;
-            select.replaceChildren();
-            for (const item of widget.items) {
-                const opt = document.createElement("option");
-                opt.value = item.key; opt.textContent = displayLabel(item, counts, widget.state); opt.disabled = widget.items.length > 1 && item.key === otherKey;
-                if (item.key === prev) opt.selected = true;
-                select.appendChild(opt);
-            }
+            select.setOptions(widget.items.map(item => ({value:item.key, label:displayLabel(item, counts, widget.state), disabled:widget.items.length > 1 && item.key === otherKey})));
+            select.value = currentKey || '';
+            select.disabled = !widget.items.length;
         };
         refill(aSelect, a?.key, b?.key);
         refill(bSelect, b?.key, a?.key);
@@ -578,14 +691,19 @@ function makeCompareWidget(node) {
     }
 
     function renderList() {
+        const scrollTop = list.scrollTop;
         list.replaceChildren();
-        const counts = itemCounts(widget.items);
-        for (const item of widget.items) {
+        const rows = compareRows(node, widget.items);
+        const counts = itemCounts(rows);
+        for (const item of rows) {
             const row = document.createElement("div");
-            Object.assign(row.style, { display: "grid", gridTemplateColumns: "110px 1fr", gap: "10px", alignItems: "start", padding: "8px", border: `1px solid ${item.key === widget.state.aKey ? "#f2b84b" : item.key === widget.state.bKey ? "#58a6ff" : "var(--ruyi-border)"}`, borderRadius: "6px", background: "var(--ruyi-content-bg)" });
+            row.dataset.compareRow = item.key; row.dataset.pending = String(!!item.pending);
+            Object.assign(row.style, { flexShrink: '0', display: "grid", gridTemplateColumns: "110px 1fr", gap: "10px", alignItems: "start", padding: "8px", border: `1px solid ${item.key === widget.state.aKey ? "#f2b84b" : item.key === widget.state.bKey ? "#58a6ff" : "var(--ruyi-border)"}`, borderRadius: "6px", background: "var(--ruyi-content-bg)" });
             const thumbWrap = document.createElement("div"); Object.assign(thumbWrap.style, { position: "relative", width: "110px", height: "110px", background: "var(--ruyi-content-bg)", overflow: "hidden", borderRadius: "4px", border: "1px solid var(--ruyi-border)" });
-            const thumb = document.createElement("img"); thumb.src = viewUrl(item.thumb); thumb.loading = "lazy"; thumb.decoding = "async"; Object.assign(thumb.style, { width: "100%", height: "100%", objectFit: "contain", display: "block" });
-            thumb.addEventListener("contextmenu", (event) => { event.preventDefault(); event.stopPropagation(); showOriginalImageContextMenu(item, event.clientX, event.clientY); });
+            const thumb = document.createElement(item.pending ? 'div' : 'img');
+            if (item.pending) {thumb.textContent = tr('waitingImage');Object.assign(thumb.style, {display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center', color: 'var(--ruyi-muted)'});}
+            else {thumb.src = viewUrl(item.thumb); thumb.loading = "lazy"; thumb.decoding = "async";thumb.addEventListener("contextmenu", (event) => { event.preventDefault(); event.stopPropagation(); showOriginalImageContextMenu(item, event.clientX, event.clientY); });}
+            Object.assign(thumb.style, { width: "100%", height: "100%", objectFit: "contain" });
             const badge = document.createElement("div"); badge.textContent = item.key === widget.state.aKey ? "A" : (item.key === widget.state.bKey ? "B" : ""); Object.assign(badge.style, { position: "absolute", top: "4px", right: "4px", minWidth: "18px", minHeight: "18px", padding: "1px 4px", borderRadius: "3px", textAlign: "center", background: item.key === widget.state.aKey ? "#9a6a12" : item.key === widget.state.bKey ? "#1f5f9f" : "transparent", color: "#fff", fontWeight: "700", fontSize: "10px", display: badge.textContent ? "block" : "none" });
             thumbWrap.append(thumb, badge);
             row.appendChild(thumbWrap);
@@ -608,7 +726,7 @@ function makeCompareWidget(node) {
             metaResolution.textContent = `${tr("resolution")}：${item.width} × ${item.height}`;
             const metaSize = document.createElement("span");
             metaSize.textContent = `${tr("fileSize")}：${formatBytes(item.size_bytes)}`;
-            meta.append(metaResolution, metaSize);
+            if (item.pending) meta.textContent = tr('waitingImage'); else meta.append(metaResolution, metaSize);
 
             const controls = document.createElement("div"); Object.assign(controls.style, { display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" });
             const autoLabel = document.createElement("label"); Object.assign(autoLabel.style, { display: "inline-flex", gap: "6px", alignItems: "center", cursor: "pointer" });
@@ -616,6 +734,8 @@ function makeCompareWidget(node) {
             const autoText = document.createElement("span"); autoText.textContent = tr("autoSave");
             autoLabel.append(autoBox, autoText);
             const saveBtn = makeBtn(tr("saveNow"));
+            saveBtn.disabled = !!item.pending;
+            if (item.pending) {saveBtn.style.opacity = '.45';saveBtn.style.cursor = 'default';}
             const rowStatus = document.createElement("span");
             const savedState = widget.savedStatus.get(item.key);
             rowStatus.textContent = savedState?.text || ""; rowStatus.title = savedState?.text || "";
@@ -636,50 +756,58 @@ function makeCompareWidget(node) {
                 saveInput.value = next;
                 saveState(node, widget.state);
             };
-            displayInput.addEventListener("change", commitDisplay); displayInput.addEventListener("blur", commitDisplay);
+            displayInput.addEventListener("input", commitDisplay); displayInput.addEventListener("change", commitDisplay); displayInput.addEventListener("blur", commitDisplay);
+            saveInput.addEventListener('input', () => {widget.state.saveNames[String(item.input)] = saveInput.value.slice(0, 256);saveState(node, widget.state);});
             saveInput.addEventListener("change", commitSave); saveInput.addEventListener("blur", commitSave);
             autoBox.addEventListener("change", () => { if (autoBox.checked) widget.state.autoSaveKeys[item.key] = true; else delete widget.state.autoSaveKeys[item.key]; saveState(node, widget.state); });
             saveBtn.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); triggerManualSave(item, saveBtn, rowStatus); });
         }
+        list.scrollTop = scrollTop;
+        fit();
     }
 
     async function renderPreview() {
+        viewport.loading();
         const generation = ++widget.renderGeneration; stage.replaceChildren();
         enlargeButton.disabled = true;
         const { a, b } = selectResolved(widget.items, widget.state); saveState(node, widget.state, false);
-        if (!a) { closeLightbox(); emptyOverlay.textContent = tr("noImage"); stage.appendChild(emptyOverlay); pruneFullCache([]); return; }
+        if (!a) { closeLightbox(); emptyOverlay.textContent = tr("noImage"); stage.appendChild(emptyOverlay); pruneFullCache([]); viewport.setImages([]); return; }
         emptyOverlay.textContent = tr("loading"); stage.appendChild(emptyOverlay);
         const [aImg, bImg] = await Promise.all([loadFull(a), loadFull(b)]); if (generation !== widget.renderGeneration) return;
-        pruneFullCache([a, b]); stage.replaceChildren(); if (!aImg && !bImg) { emptyOverlay.textContent = tr("noImage"); stage.appendChild(emptyOverlay); return; }
+        pruneFullCache([a, b]); stage.replaceChildren(); if (!aImg && !bImg) { emptyOverlay.textContent = tr("noImage"); stage.appendChild(emptyOverlay); viewport.setImages([]); return; }
         enlargeButton.disabled = false;
         const counts = itemCounts(widget.items);
         if (widget.state.mode === "toggle") {
             const showA = widget.state.toggleSide !== "B" || !bImg; const chosen = showA ? (aImg || bImg) : (bImg || aImg);
-            stage.appendChild(makeStageImage(chosen)); stage.appendChild(makeCorner((showA ? "A" : "B") + " · " + (showA ? displayLabel(a, counts, widget.state) : displayLabel(b, counts, widget.state)), "left", showA ? "#f2b84b" : "#58a6ff")); return;
+            stage.appendChild(makeStageImage(chosen)); stage.appendChild(makeCorner((showA ? "A" : "B") + " · " + (showA ? displayLabel(a, counts, widget.state) : displayLabel(b, counts, widget.state)), "left", showA ? "#f2b84b" : "#58a6ff")); viewport.setImages([aImg,bImg]); return;
         }
-        const bottom = makeStageImage(bImg || aImg); const top = makeStageImage(aImg || bImg); top.style.clipPath = `inset(0 ${100 - widget.split * 100}% 0 0)`; stage.append(bottom, top);
-        const divider = document.createElement("div"); Object.assign(divider.style, { position: "absolute", top: 0, bottom: 0, left: `${widget.split * 100}%`, width: "2px", marginLeft: "-1px", background: "rgba(255,255,255,.9)", boxShadow: "0 0 0 1px rgba(0,0,0,.35)", pointerEvents: "none", zIndex: 4 }); divider.dataset.ruyiDivider = "1"; stage.appendChild(divider);
+        const bottom = makeStageImage(bImg || aImg),top = makeStageImage(aImg || bImg);
+        const wipeLayer=document.createElement('div');wipeLayer.dataset.compareWipeLayer='';
+        Object.assign(wipeLayer.style,{position:'absolute',inset:'0',clipPath:`inset(0 ${100-widget.split*100}% 0 0)`,pointerEvents:'none'});wipeLayer.append(top);stage.append(bottom,wipeLayer);
+        const divider = document.createElement("div"); Object.assign(divider.style, { position: "absolute", top: 0, bottom: 0, left: `${widget.split * 100}%`, width: "14px", marginLeft: "-7px", pointerEvents: "none", zIndex: 4 }); divider.dataset.ruyiDivider = "1";
+        const line=document.createElement('div');Object.assign(line.style,{position:'absolute',left:'6px',top:'0',bottom:'0',width:'2px',background:'rgba(255,255,255,.9)',boxShadow:'0 0 0 1px rgba(0,0,0,.35)',pointerEvents:'none'});divider.append(line);stage.appendChild(divider);
         stage.appendChild(makeCorner(`A · ${displayLabel(a, counts, widget.state)}`, "left", "#f2b84b"));
         stage.appendChild(makeCorner(`B · ${displayLabel(b, counts, widget.state)}`, "right", "#58a6ff"));
+        viewport.setImages([aImg,bImg]);
     }
     function applyWipePosition(clientX) {
         if (widget.state.mode !== "wipe" || !widget.items.length) return;
         const rect = stage.getBoundingClientRect(); if (rect.width <= 1) return;
         widget.split = clamp((clientX - rect.left) / rect.width, 0, 1);
-        const topImage = stage.querySelectorAll("img")[1]; if (topImage) topImage.style.clipPath = `inset(0 ${100 - widget.split * 100}% 0 0)`;
+        const wipeLayer = stage.querySelector('[data-compare-wipe-layer]'); if (wipeLayer) wipeLayer.style.clipPath = `inset(0 ${100 - widget.split * 100}% 0 0)`;
         const divider = stage.querySelector('[data-ruyi-divider="1"]'); if (divider) divider.style.left = `${widget.split * 100}%`;
     }
     function refreshAll() { updateTopControls(); renderList(); renderPreview(); }
 
-    stage.addEventListener("pointermove", (e) => { if (widget.state.mode === "wipe") applyWipePosition(e.clientX); });
-    stage.addEventListener("pointerdown", (e) => { if (e.button !== 0) return; e.preventDefault(); e.stopPropagation(); if (widget.state.mode === "wipe") { applyWipePosition(e.clientX); return; } widget.state.toggleSide = widget.state.toggleSide === "A" ? "B" : "A"; saveState(node, widget.state); renderPreview(); });
     aSelect.addEventListener("change", () => { widget.state.aKey = aSelect.value; if (widget.items.length > 1 && widget.state.aKey === widget.state.bKey) { const firstOther = widget.items.find((it) => it.key !== widget.state.aKey); widget.state.bKey = firstOther?.key || widget.state.bKey; } saveState(node, widget.state); refreshAll(); });
     bSelect.addEventListener("change", () => { widget.state.bKey = bSelect.value; if (widget.items.length > 1 && widget.state.bKey === widget.state.aKey) { const firstOther = widget.items.find((it) => it.key !== widget.state.bKey); widget.state.aKey = firstOther?.key || widget.state.aKey; } saveState(node, widget.state); refreshAll(); });
     modeButton.addEventListener("click", (e) => { e.preventDefault(); widget.state.mode = widget.state.mode === "wipe" ? "toggle" : "wipe"; saveState(node, widget.state); updateTopControls(); renderPreview(); });
 
     widget.setItems = (items, autosaved = [], { persist = true } = {}) => {
         clearFullCache();
-        const nextItems = normalizePersistedCompareItems(items);
+        // The workflow history stays bounded, while the current execution and
+        // unlimited row mode must not drop images at the persistence limit.
+        const nextItems = normalizePersistedCompareItems(items, Number.POSITIVE_INFINITY);
         const nextContentIds = new Map(nextItems.map((item) => [item.key, item.content_id || null]));
         for (const [key, oldContentId] of widget.itemContentIds.entries()) {
             const newContentId = nextContentIds.get(key);
@@ -711,7 +839,7 @@ function makeCompareWidget(node) {
         syncManifestWidget(node, widget.state);
         refreshAll();
     };
-    widget.onRemoved = () => { closeLightbox(false); widget.renderGeneration++; clearFullCache(); };
+    widget.onRemoved = () => { disposed = true; observer.disconnect(); closeLightbox(false); viewport.dispose(); aSelect.dispose(); bSelect.dispose(); widget.renderGeneration++; clearFullCache(); };
     refreshAll(); syncManifestWidget(node, widget.state); return widget;
 }
 
@@ -731,6 +859,10 @@ app.registerExtension({
         };
         const originalConfigure = nodeType.prototype.onConfigure;
         nodeType.prototype.onConfigure = function (data) { const result = originalConfigure?.apply(this, arguments); setTimeout(() => { hideManifestWidget(this); this.ruyiCompareWidget?.restoreAfterWorkflowSwitch?.(); }, 0); return result; };
+        const originalConnections = nodeType.prototype.onConnectionsChange;
+        nodeType.prototype.onConnectionsChange = function (...args) {const result = originalConnections?.apply(this, args);queueMicrotask(() => this.ruyiCompareWidget?.refreshConnections?.());return result;};
+        const originalResize = nodeType.prototype.onResize;
+        nodeType.prototype.onResize = function (...args) {const result = originalResize?.apply(this, args);this.ruyiCompareWidget?.fit?.();return result;};
         const originalSerialize = nodeType.prototype.onSerialize;
         nodeType.prototype.onSerialize = function (data) { originalSerialize?.apply(this, arguments); data.properties ||= {}; const state = this.ruyiCompareWidget?.state || getState(this); data.properties[STATE_KEY] = { ...state, displayNames: { ...state.displayNames }, saveNames: { ...state.saveNames }, autoSaveKeys: { ...state.autoSaveKeys } }; data.properties[LAST_ITEMS_KEY] = normalizePersistedCompareItems(this.ruyiCompareWidget?.items || this.ruyiCompareItems || []); syncManifestWidget(this, state); };
         const originalExecuted = nodeType.prototype.onExecuted;

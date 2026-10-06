@@ -24,7 +24,9 @@ class PromptTests(unittest.TestCase):
     def test_empty_negative_is_encoded_and_conditions_are_returned_intact(self):
         class Clip:
             def __init__(self): self.texts = []
-            def tokenize(self, text): self.texts.append(text); return {'text': text}
+            def tokenize(self, text):
+                self.texts.append(text)
+                return {'text': text}
             def encode_from_tokens_scheduled(self, tokens):
                 return [[tokens['text'], {'pooled_output': 'preserved', 'start_percent': 0.2}]]
         clip = Clip()

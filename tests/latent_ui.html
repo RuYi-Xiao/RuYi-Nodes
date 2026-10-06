@@ -18,6 +18,14 @@ function create(properties={}){
 function change(el,value){el.value=value;el.dispatchEvent(new Event('change',{bubbles:true}))}
 function choose(t,value){t.input('分辨率预设').click();document.querySelector(`[role="option"][data-value="${value}"]`).click();}
 async function test(name,run){try{await run();results.textContent+=`PASS ${name}\n`}catch(error){results.textContent+=`FAIL ${name}: ${error.message}\n`}}
+await test('Aligned groups share label columns and 28px buttons with equal preset actions',()=>{
+ const t=create();const actions=[...t.host.querySelectorAll('.preset-actions button')];equal(actions.length,3);
+ equal(actions.every(b=>b.offsetHeight===28),true);equal(new Set(actions.map(b=>b.offsetWidth)).size,1);
+ const rows=[...t.host.querySelectorAll('.aligned-row')];equal(rows.length,3);
+ equal(new Set(rows.map(row=>row.firstElementChild.offsetWidth)).size,1);
+ equal(t.host.textContent.includes('缩放后按对齐倍数取整'),false);
+ equal(t.input('缩放百分比').title.includes('对齐'),true);
+});
 await test('Saving with a selected preset creates a new resolution and repeated saves do not duplicate it',()=>{
  const t=create();t.button('保存预设').click();
  choose(t,'832x1216');
@@ -46,7 +54,7 @@ await test('Native width arrows follow alignment in both directions with step2 p
 await test('Scaling uses a stable baseline and applies uniform upper limits',()=>{
  const t=create();change(t.input('缩放百分比'),'150');equal([t.widget('width').value,t.widget('height').value],[1248,1824]);
  change(t.input('缩放百分比'),'50');equal([t.widget('width').value,t.widget('height').value],[416,608]);
- t.button('以当前为基准').click();change(t.input('缩放百分比'),'200');equal([t.widget('width').value,t.widget('height').value],[832,1216]);
+ t.button('设为基准').click();change(t.input('缩放百分比'),'200');equal([t.widget('width').value,t.widget('height').value],[832,1216]);
 });
 await test('Editing a valid scale immediately updates the resolution without requiring blur',()=>{
  const t=create();const percent=t.input('缩放百分比');percent.value='150';percent.dispatchEvent(new Event('input',{bubbles:true}));
@@ -77,7 +85,7 @@ await test('Linked resolution inputs disable resolution operations without chang
 });
 await test('Invalid scale keeps resolution and English UI fits at minimum width',()=>{
  const t=create();change(t.input('缩放百分比'),'NaN');equal([t.widget('width').value,t.widget('height').value],[832,1216]);
- document.documentElement.lang='en';const en=create();equal(en.button('Swap width / height')!==undefined,true);equal(en.host.scrollWidth<=en.host.clientWidth,true);document.documentElement.lang='zh';
+ document.documentElement.lang='en';const en=create();equal(en.button('Swap W / H')!==undefined,true);equal(en.host.scrollWidth<=en.host.clientWidth,true);document.documentElement.lang='zh';
 });
 await test('Removed widgets stop reacting to shared preset changes and keep DOM cleanup',()=>{
  const removed=create();const previous=removed.input('分辨率预设').textContent;

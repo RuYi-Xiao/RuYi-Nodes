@@ -13,15 +13,19 @@ import {app} from '/scripts/app.js';
 import '/extensions/RuYi/ruyi_image_compare.js';
 const items = ['a', 'b', 'c'].map((letter, i) => ({key:`${i+1}:0`, input:i+1, frame:0, frame_count:1, width:960, height:640, size_bytes:1024, preview:{filename:`${letter}.svg`, type:'temp', subfolder:''}, thumb:{filename:`${letter}.svg`, type:'temp', subfolder:''}}));
 class CompareNode {
-    constructor() {this.properties={}; this.widgets=[]; this.graph=app.graph; this.size=[740,790]; this.comfyClass='RuYiImageCompare';}
+    constructor() {this.properties={}; this.inputs=[]; this.widgets=[{name:'save_manifest',value:'{}'}]; this.graph=app.graph; this.size=[740,790]; this.comfyClass='RuYiImageCompare';}
     addDOMWidget(name,type,element,options) {this.element=element; const widget={name,type,element,options}; this.widgets.push(widget); return widget;}
-    setSize(size) {this.size=size;} setDirtyCanvas() {}
+    computeSize() {return [this.size[0],70+(this.widgets.find(w=>w.element)?.options.getMinHeight()||470)];}
+    // Native LiteGraph _arrangeWidgets treats computeSize widgets as fixed;
+    // computeLayoutSize DOM widgets receive the remaining node height.
+    layoutWidget(){const widget=this.widgets.find(w=>w.element);if(widget&&this.host)widget.element.style.height=`${widget.computeSize?widget.computeSize(this.size[0])[1]+4:this.size[1]-70}px`;}
+    setSize(size) {this.size=size;if(this.host){this.host.style.width=`${size[0]}px`;this.host.style.height=`${size[1]}px`;}this.layoutWidget();this.onResize?.(size);} setDirtyCanvas() {this.layoutWidget();}
 }
 await app.extensions[0].beforeRegisterNodeDef(CompareNode,{name:'RuYiImageCompare'});
 function createNode(populated=true) {
     const node=new CompareNode(); node.onNodeCreated();
     const host=document.createElement('section'); host.className='node'; host.append(node.element); document.querySelector('#nodes').append(host);
-    node.host=host; app.graph._nodes.push(node);
+    node.host=host;node.setSize(node.size); app.graph._nodes.push(node);
     if(populated) node.onExecuted({ruyi_data:[JSON.stringify({compare_items:items,autosaved:[]})]});
     return node;
 }
@@ -30,7 +34,10 @@ const first=createNode(), second=createNode();
 window.compareHarness={first,second,createNode,removeNode,items};
 const output=document.querySelector('#results'); output.textContent='就绪，可点击节点图片区右下角的放大按钮。';
 const assert=(ok,message)=>{if(!ok) throw new Error(message);};
-const settle=()=>new Promise(resolve=>setTimeout(resolve,100));
+function layoutInfo(node){const list=node.element.querySelector('[data-compare-list]'),toolbar=node.element.querySelector('[data-compare-toolbar]');return JSON.stringify({size:node.size,min:node.min_size,list:[list.clientHeight,list.scrollHeight],toolbar:[toolbar.clientWidth,toolbar.scrollWidth]});}
+// Layout is scheduled in requestAnimationFrame; fixed timer waits race with
+// background-tab frame throttling. Wait for rendering as well as image loads.
+const settle=()=>Promise.all([new Promise(resolve=>setTimeout(resolve,100)),new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))]);
 const zoom=node=>node.element.querySelector('button[aria-label="放大图像对比"]');
 const dialog=()=>document.querySelector('[role="dialog"][aria-label="放大图像对比"]');
 const stage=modal=>modal.querySelector('[data-capture-wheel]');
@@ -45,24 +52,145 @@ window.runCompareTests=async()=>{
     async function test(name, fn) {
         try {await fn(); results.push({name,pass:true});}
         catch(error) {results.push({name,pass:false,error:error.message});}
+        finally {dialog()?.querySelector('button[aria-label="关闭"]')?.click();}
         output.textContent=results.map(r=>`${r.pass?'PASS':'FAIL'} ${r.name}${r.error?' — '+r.error:''}`).join('\n');
     }
     await test('空输入禁用放大',async()=>{const empty=createNode(false); try {assert(zoom(empty)?.disabled,'空输入放大按钮应存在且禁用');} finally {removeNode(empty);}});
+    await test('滚轮与圆形滑块缩放两图，限制在默认 100–300%，复位居中',async()=>{
+        const node=createNode();try{await settle();const area=stage(node.element),slider=node.element.querySelector('input[aria-label="图像缩放百分比"]');
+        assert(slider&&slider.type==='range'&&slider.min==='100'&&slider.max==='300'&&slider.value==='100','缩放控件或默认范围缺失');
+        const rect=area.getBoundingClientRect(),wheel=new WheelEvent('wheel',{deltaY:-100,clientX:rect.left+rect.width*.6,clientY:rect.top+rect.height*.5,bubbles:true,cancelable:true});
+        area.dispatchEvent(wheel);assert(wheel.defaultPrevented&&Number(slider.value)>100,'滚轮没有消费事件或缩放');
+        slider.value='250';slider.dispatchEvent(new Event('input',{bubbles:true}));
+        const imgs=area.querySelectorAll('img');assert(imgs.length===2&&imgs[0].style.transform===imgs[1].style.transform&&imgs[0].style.transform.includes('scale(2.5)'),'两图缩放没有同步');
+        assert(area.querySelector('[data-compare-wipe-layer]')?.style.clipPath,'分界裁剪必须留在未缩放的图层上');
+        area.dispatchEvent(new WheelEvent('wheel',{deltaY:-10000,bubbles:true,cancelable:true}));assert(slider.value==='300','上限未生效');
+        node.element.querySelector('button[aria-label="复位缩放与位置"]').click();assert(slider.value==='100'&&Number(area.dataset.panX)===0&&Number(area.dataset.panY)===0,'复位没有回到100%中心');
+        }finally{removeNode(node);}
+    });
+    await test('放大后拖动平移两图，从分界线按下也平移，取消拖动不切换图片',async()=>{
+        const node=createNode();try{await settle();const area=stage(node.element),slider=node.element.querySelector('input[type=range]');
+        assert(slider,'缩放轴缺失');slider.value='200';slider.dispatchEvent(new Event('input'));const rect=area.getBoundingClientRect(),split=node.ruyiCompareWidget.split;
+        const pointer=(type,x,y,target=area)=>target.dispatchEvent(new PointerEvent(type,{button:0,pointerId:1,clientX:rect.left+rect.width*x,clientY:rect.top+rect.height*y,bubbles:true,cancelable:true}));
+        pointer('pointerdown',.25,.5);pointer('pointermove',.35,.6);pointer('pointerup',.35,.6);
+        assert(Number(area.dataset.panX)>0&&node.ruyiCompareWidget.split===split,'平移改变了分界或没有平移');
+        const before=area.querySelector('img').style.transform;assert([...area.querySelectorAll('img')].every(img=>img.style.transform===before),'图像平移不同步');
+        pointer('pointerdown',.5,.5,area.querySelector('[data-ruyi-divider]'));pointer('pointermove',.7,.5);pointer('pointerup',.7,.5);
+        assert(node.ruyiCompareWidget.split===split&&area.querySelector('img').style.transform!==before,'从分界线按下未平移图片或改变了对比位置');
+        [...node.element.querySelectorAll('button')].find(b=>b.textContent.startsWith('对比方式')).click();await settle();
+        const side=node.ruyiCompareWidget.state.toggleSide;pointer('pointerdown',.3,.5);pointer('pointermove',.45,.5);pointer('pointercancel',.45,.5);pointer('pointerup',.45,.5);
+        assert(node.ruyiCompareWidget.state.toggleSide===side,'取消平移错误触发了点击切换');
+        pointer('pointerdown',.3,.5);pointer('pointerup',.3,.5);await settle();assert(node.ruyiCompareWidget.state.toggleSide!==side,'放大时单击不再能切换图片');
+        }finally{removeNode(node);}
+    });
+    await test('鼠标悬停后按实际命中的元素拖动，分界线不拦截图像平移',async()=>{
+        for(const enlarged of [false,true]){const node=createNode();try{await settle();if(enlarged){zoom(node).click();await settle();}
+        const root=enlarged?dialog():node.element,area=stage(root),slider=root.querySelector('input[type=range]');slider.value='200';slider.dispatchEvent(new Event('input'));area.scrollIntoView({block:'center'});await settle();
+        const rect=area.getBoundingClientRect(),x=rect.left+rect.width*.35,y=rect.top+rect.height*.5;
+        const send=(type,target,dx=0,dy=0,buttons=0)=>target.dispatchEvent(new PointerEvent(type,{button:0,buttons,pointerId:1,clientX:x+dx,clientY:y+dy,bubbles:true,cancelable:true}));
+        const hoverTarget=document.elementFromPoint(x,y);assert(area.contains(hoverTarget),'无法命中测试图片区');send('pointermove',hoverTarget);
+        const split=node.ruyiCompareWidget.split,downTarget=document.elementFromPoint(x,y);assert(area.contains(downTarget),'按下位置不在图片区');
+        send('pointerdown',downTarget,0,0,1);send('pointermove',area,50,25,1);send('pointerup',area,50,25);
+        assert(Number(area.dataset.panX)>0&&Number(area.dataset.panY)>0,'真实命中目标没有触发平移 '+enlarged);
+        assert(node.ruyiCompareWidget.split===split,'平移期间对比轴跟着移动');
+        send('pointermove',area,75,0);assert(node.ruyiCompareWidget.split>split,'松开后未恢复悬停对比');
+        }finally{removeNode(node);}}
+    });
+    await test('最大缩放设置持久化并即时限制当前缩放，空图禁用相机控件',async()=>{
+        const node=createNode();try{await settle();node.element.querySelector('[data-action=settings]').click();const limit=node.element.querySelector('input[aria-label="最大缩放百分比"]');
+        assert(limit?.value==='300','最大缩放设置缺失');limit.value='500';limit.dispatchEvent(new Event('change'));const slider=node.element.querySelector('input[type=range]');assert(slider.max==='500','设置未更新轴上限');
+        slider.value='450';slider.dispatchEvent(new Event('input'));limit.value='200';limit.dispatchEvent(new Event('change'));assert(slider.value==='200','降低上限没有限制当前相机');
+        const saved={};node.onSerialize(saved);assert(saved.properties.ruyi_image_compare.maxZoomPercent===200,'设置没有随节点保存');
+        node.onConfigure({properties:node.properties});await settle();assert(node.element.querySelector('input[aria-label="最大缩放百分比"]').value==='200','工作流恢复丢失设置');
+        limit.value='-5';limit.dispatchEvent(new Event('change'));assert(limit.value==='200','非法设置没有保留原有效值');
+        node.onExecuted({ruyi_data:[JSON.stringify({compare_items:[]})]});await settle();assert(slider.disabled&&node.element.querySelector('button[aria-label="复位缩放与位置"]').disabled,'空图相机仍然启用');
+        }finally{removeNode(node);}
+    });
+    await test('放大后自由移动继续滑动对比，仅平移期间冻结分界，松开后恢复',async()=>{
+        for(const enlarged of [false,true]){const node=createNode();try{await settle();if(enlarged){zoom(node).click();await settle();}
+        const root=enlarged?dialog():node.element,area=stage(root),slider=root.querySelector('input[type=range]');slider.value='200';slider.dispatchEvent(new Event('input'));
+        const rect=area.getBoundingClientRect(),pointer=(type,x,y,buttons=0)=>area.dispatchEvent(new PointerEvent(type,{button:0,buttons,pointerId:1,clientX:rect.left+rect.width*x,clientY:rect.top+rect.height*y,bubbles:true,cancelable:true}));
+        pointer('pointermove',.3,.5);assert(Math.abs(node.ruyiCompareWidget.split-.3)<.01,'放大后鼠标自由移动没有更新分界 '+enlarged);
+        pointer('pointerdown',.3,.5,1);pointer('pointermove',.5,.6,1);assert(Math.abs(node.ruyiCompareWidget.split-.3)<.01&&Number(area.dataset.panX)>0,'平移没有冻结分界或没有移动图片');
+        pointer('pointerup',.5,.6);pointer('pointermove',.7,.5);assert(Math.abs(node.ruyiCompareWidget.split-.7)<.01,'松开后没有恢复滑动对比');
+        }finally{removeNode(node);}}
+    });
+    await test('放大点击对比在松开时切换，微抖不平移，拖动和取消均不误触切换',async()=>{
+        for(const enlarged of [false,true]){const node=createNode();try{await settle();if(enlarged){zoom(node).click();await settle();}
+        const root=enlarged?dialog():node.element;[...root.querySelectorAll('button')].find(b=>b.textContent.startsWith('对比方式')).click();await settle();
+        const area=stage(root),slider=root.querySelector('input[type=range]');slider.value='200';slider.dispatchEvent(new Event('input'));const rect=area.getBoundingClientRect();
+        const pointer=(type,dx,dy)=>area.dispatchEvent(new PointerEvent(type,{button:0,pointerId:1,clientX:rect.left+rect.width*.3+dx,clientY:rect.top+rect.height*.5+dy,bubbles:true,cancelable:true}));
+        let side=node.ruyiCompareWidget.state.toggleSide;pointer('pointerdown',0,0);pointer('pointermove',1,1);assert(node.ruyiCompareWidget.state.toggleSide===side&&Number(area.dataset.panX)===0,'微抖提前切换或平移');pointer('pointerup',1,1);await settle();assert(node.ruyiCompareWidget.state.toggleSide!==side,'松开微抖单击没有切换');
+        side=node.ruyiCompareWidget.state.toggleSide;pointer('pointerdown',0,0);pointer('pointermove',25,20);pointer('pointermove',0,0);pointer('pointerup',0,0);await settle();assert(node.ruyiCompareWidget.state.toggleSide===side,'拖出后回到原点误判为单击');
+        pointer('pointerdown',0,0);pointer('pointerup',25,20);await settle();assert(node.ruyiCompareWidget.state.toggleSide===side,'缺少中间移动事件时释放位置被误判为单击');
+        pointer('pointerdown',0,0);pointer('pointercancel',0,0);pointer('pointerup',0,0);await settle();assert(node.ruyiCompareWidget.state.toggleSide===side,'取消操作仍切换图片');
+        }finally{removeNode(node);}}
+    });
+    await test('缩放平移在放大窗口和常态共用，缩小节点仍将图片约束在可见范围',async()=>{
+        const node=createNode();try{await settle();const slider=node.element.querySelector('input[type=range]');assert(slider,'缩放轴缺失');slider.value='200';slider.dispatchEvent(new Event('input'));
+        zoom(node).click();await settle();const modal=dialog(),area=stage(modal),rect=area.getBoundingClientRect();assert(modal.contains(slider)&&slider.value==='200','放大后相机控件或比例丢失');
+        area.dispatchEvent(new WheelEvent('wheel',{deltaY:-100,clientX:rect.left+rect.width/2,clientY:rect.top+rect.height/2,bubbles:true,cancelable:true}));assert(Number(slider.value)>200,'放大窗口滚轮未生效');
+        const percent=slider.value;modal.querySelector('button[aria-label="关闭"]').click();await settle();assert(node.element.contains(slider)&&slider.value===percent,'退出放大丢失比例或控件');
+        node.setSize([480,500]);await settle();assert([...stage(node.element).querySelectorAll('img')].every(img=>!img.style.transform.includes('NaN')),'调整大小使相机无效');
+        }finally{removeNode(node);}
+    });
+    await test('不同宽高比图片在点击切换时保持同一个对比位置',async()=>{
+        const node=createNode();try{node.onExecuted({ruyi_data:[JSON.stringify({compare_items:[items[0],{...items[1],width:640,height:960,preview:{filename:'portrait.svg',type:'temp'},thumb:{filename:'portrait.svg',type:'temp'}}]})]});await settle();
+        [...node.element.querySelectorAll('button')].find(b=>b.textContent.startsWith('对比方式')).click();await settle();
+        const area=stage(node.element),slider=node.element.querySelector('input[type=range]');slider.value='200';slider.dispatchEvent(new Event('input'));const r=area.getBoundingClientRect();
+        const pointer=(type,x)=>area.dispatchEvent(new PointerEvent(type,{button:0,pointerId:1,clientX:r.left+r.width*x,clientY:r.top+r.height*.5,bubbles:true}));
+        pointer('pointerdown',.2);pointer('pointermove',.35);pointer('pointerup',.35);const pan=Number(area.dataset.panX);assert(pan>0,'平移未准备好');
+        pointer('pointerdown',.2);pointer('pointerup',.2);await settle();assert(Math.abs(Number(area.dataset.panX)-pan)<.0001,'切换到另一宽高比重置了平移');
+        pointer('pointerdown',.2);pointer('pointerup',.2);await settle();assert(Math.abs(Number(area.dataset.panX)-pan)<.0001,'返回 A 丢失对比位置');
+        }finally{removeNode(node);}
+    });
+    await test('触控板小幅滚轮事件累积缩放，画布缩小时拖动速度保持一致',async()=>{
+        const node=createNode();try{await settle();const area=stage(node.element),rect=area.getBoundingClientRect(),slider=node.element.querySelector('input[type=range]');
+        for(let i=0;i<20;i++)area.dispatchEvent(new WheelEvent('wheel',{deltaY:-1,clientX:rect.left+rect.width/2,clientY:rect.top+rect.height/2,bubbles:true,cancelable:true}));
+        assert(Number(area.dataset.zoomPercent)>101.9,'微小滚动被逐次舍入丢失');
+        slider.value='200';slider.dispatchEvent(new Event('input'));node.host.style.transform='scale(.5)';node.host.style.transformOrigin='top left';const r=area.getBoundingClientRect();
+        const pointer=(type,x)=>area.dispatchEvent(new PointerEvent(type,{button:0,pointerId:1,clientX:r.left+r.width*x,clientY:r.top+r.height*.5,bubbles:true}));
+        pointer('pointerdown',.2);pointer('pointermove',.3);pointer('pointerup',.3);assert(Math.abs(Number(area.dataset.panX)-.1)<.001,'画布缩放影响了平移距离');
+        }finally{removeNode(node);}
+    });
+    await test('共享菜单在放大窗口中匹配字号，禁用对侧图片，Escape 仅关闭菜单',async()=>{
+        const node=createNode();try{await settle();zoom(node).click();await settle();const modal=dialog(),a=modal.querySelector('[role=combobox]');
+        a.click();let menu=document.querySelector('.ruyi-dropdown-menu');assert(menu,'菜单未打开');
+        const choice=menu.querySelector('[data-value="3:0"]'),choiceRect=choice.getBoundingClientRect();
+        assert(choice.contains(document.elementFromPoint(choiceRect.left+choiceRect.width/2,choiceRect.top+choiceRect.height/2)),'菜单被放大窗口遮罩挡住，不能点击');
+        assert(Math.abs(menu.getBoundingClientRect().width-a.getBoundingClientRect().width)<1,'菜单宽度不匹配');
+        assert(getComputedStyle(menu.firstElementChild).fontSize===getComputedStyle(a).fontSize,'菜单字号不匹配');
+        assert(menu.querySelector('[data-value="2:0"]').disabled,'对侧图片选项应禁用');
+        a.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));
+        assert(dialog()&&!document.querySelector('.ruyi-dropdown-menu'),'Escape 关闭了父窗口');
+        a.click();menu=document.querySelector('.ruyi-dropdown-menu');menu.querySelector('[data-value="3:0"]').click();await settle();
+        assert(node.ruyiCompareWidget.state.aKey==='3:0'&&dialog(),'选择没有保留状态和窗口');
+        a.click();modal.querySelector('button[aria-label="关闭"]').click();assert(!document.querySelector('.ruyi-dropdown-menu'),'窗口关闭遗留菜单');
+        }finally{removeNode(node);}
+    });
+    await test('连接即创建待输入栏，执行后保留名称和自动保存设置',async()=>{const node=createNode(false);try{node.inputs=[{name:'images.image_1',type:'IMAGE',link:7},{name:'images.image_2',type:'IMAGE',link:8},{name:'images.image_3',type:'IMAGE',link:null}];node.onConnectionsChange?.(1,1,true);await settle();const rows=node.element.querySelectorAll('[data-compare-row]');assert(rows.length===2,'连接没有生成待输入栏');assert(rows[0].querySelector('button').disabled,'待输入图片不能直接保存');const inputs=rows[0].querySelectorAll('input[type=text]');inputs[0].value='准备好的名称';inputs[0].dispatchEvent(new Event('input'));inputs[1].value='Date/%display_name%';inputs[1].dispatchEvent(new Event('input'));const auto=rows[0].querySelector('[type=checkbox]');auto.checked=true;auto.dispatchEvent(new Event('change'));const manifest=JSON.parse(node.widgets.find(w=>w.name==='save_manifest').value);assert(manifest.displayNames['1']==='准备好的名称'&&manifest.saveNames['1']==='Date/%display_name%'&&manifest.autoSaveKeys.includes('1:0'),'执行前保存设置没有写入 manifest');node.onExecuted({ruyi_data:[JSON.stringify({compare_items:items.slice(0,2)})]});await settle();const first=node.element.querySelector('[data-compare-row]');assert(!first.querySelector('button').disabled&&first.querySelector('[type=checkbox]').checked&&first.querySelector('[type=text]').value==='准备好的名称','执行覆盖了预先设置');node.inputs.push({name:'images.image_4',type:'IMAGE',link:9});node.onConnectionsChange?.(1,3,true);await settle();assert(node.element.querySelector('[data-compare-row="4:0"][data-pending=true]'),'新增连接没有新栏');node.inputs[3].link=null;node.onConnectionsChange?.(1,3,false);await settle();assert(!node.element.querySelector('[data-compare-row="4:0"]'),'断开连接遗留待输入栏');}finally{removeNode(node);}});
+    await test('齿轮设置、半宽选择框、陈列上限及 0 的自动延展',async()=>{const node=createNode();try{await settle();const gear=node.element.querySelector('button[data-action=settings]');assert(gear?.querySelector('svg')&&!gear.textContent,'齿轮缺失');for(const select of node.element.querySelectorAll('[role=combobox]'))assert(select.offsetWidth===85,'选单未减半');gear.click();const count=node.element.querySelector('input[aria-label="最多显示图片数"]');assert(count?.value==='2','默认显示上限应为2');const list=node.element.querySelector('[data-compare-list]');assert(list.scrollHeight>list.clientHeight,'默认未限制2栏');count.value='0';count.dispatchEvent(new Event('change'));await settle();assert(list.clientHeight>=list.scrollHeight-1,'0仍然截断图片列表');const tall=node.size[1];assert(tall>=node.computeSize()[1],'节点没有延展以适应全部栏位');const saved={};node.onSerialize(saved);assert(saved.properties.ruyi_image_compare.maxVisibleImages===0,'上限没有保存进工作流');count.value='1';count.dispatchEvent(new Event('change'));await settle();assert(list.scrollHeight>list.clientHeight&&node.size[1]<tall,'上限调整没有收紧列表 '+layoutInfo(node)+' tall='+tall);node.onConfigure({properties:node.properties});await settle();assert(node.element.querySelector('input[aria-label="最多显示图片数"]').value==='1','恢复丢失上限');}finally{removeNode(node);}});
+    await test('中英文工具栏和内容最小宽高得到保护',async()=>{for(const lang of ['zh','en']){document.documentElement.lang=lang;const node=createNode();try{await settle();node.setSize([100,100]);await settle();const toolbar=node.element.querySelector('[data-compare-toolbar]');assert(toolbar&&toolbar.scrollWidth<=toolbar.clientWidth+1,'缩小后工具栏溢出 '+lang+' '+layoutInfo(node));assert(node.size[0]>=node.min_size[0]&&node.size[1]>=node.min_size[1],'最小宽高没有生效');}finally{removeNode(node);}}document.documentElement.lang='zh';});
+    await test('用户加高节点时对比展示区域随原生可伸展布局增长',async()=>{const node=createNode();try{await settle();const area=node.element.querySelector('[data-capture-wheel]'),before=area.offsetHeight;node.setSize([node.size[0],node.size[1]+220]);await settle();assert(area.offsetHeight>=before+219,'加高节点只留下空白，图片展示区域没有伸展');}finally{removeNode(node);}});
+    await test('不限数量超过原有 5000 高度及 128 图片后仍完整陈列',async()=>{const node=createNode(false);try{node.properties.ruyi_image_compare={maxVisibleImages:0};node.ruyiCompareWidget.restoreState();const batch=Array.from({length:130},(_,i)=>({...items[0],key:`1:${i}`,frame:i,frame_count:130}));node.onExecuted({ruyi_data:[JSON.stringify({compare_items:batch})]});await settle();const list=node.element.querySelector('[data-compare-list]');assert(list.children.length===130,'实际图片被历史缓存数量上限截断');assert(node.size[1]>5000&&list.clientHeight>=list.scrollHeight-1,'不限数量仍有高度上限 '+layoutInfo(node));const saved={};node.onSerialize(saved);assert(saved.properties.ruyi_image_compare_last_items.length===128,'历史预览持久化应继续限制大小');}finally{removeNode(node);}});
+    await test('放大界面中齿轮设置有效，关闭后恢复控件顺序',async()=>{const node=createNode();try{await settle();zoom(node).click();await settle();const modal=dialog();modal.querySelector('button[data-action=settings]').click();const count=modal.querySelector('[aria-label="最多显示图片数"]');assert(count?.offsetHeight,'放大界面的设置没有显示');count.value='0';count.dispatchEvent(new Event('change'));modal.querySelector('button[aria-label="关闭"]').click();await settle();const children=[...node.element.children];assert(children[0].hasAttribute('data-compare-toolbar')&&children[1].contains(count)&&children[3].hasAttribute('data-compare-list'),'关闭后工具栏/设置/预览/列表顺序错误');assert(node.ruyiCompareWidget.state.maxVisibleImages===0,'放大设置丢失');count.value='-1';count.dispatchEvent(new Event('change'));assert(count.value==='2','非法上限未恢复安全默认值');}finally{removeNode(node);}});
     await test('放大按钮打开大屏、关闭恢复位置和焦点',async()=>{
         const button=zoom(first); assert(button,'Missing magnifier-plus zoom button'); button.focus(); button.click(); await settle();
-        const modal=dialog(); assert(modal,'点击应打开对比窗口'); assert(stage(modal).getBoundingClientRect().width>first.element.getBoundingClientRect().width,'窗口应比节点图片区更宽');
-        assert(modal.querySelectorAll('select').length===2,'窗口保留 A/B 选择'); assert(!modal.querySelector('input[type=checkbox]'),'保存列表应留在节点内');
+        const modal=dialog(); assert(modal,'点击应打开对比窗口');
+        const modalRect=modal.getBoundingClientRect(),stageRect=stage(modal).getBoundingClientRect();
+        assert(modalRect.left>=0&&modalRect.right<=innerWidth&&stageRect.width>=modalRect.width-4,'窗口应适配当前视口，图片区填满窗口宽度');
+        assert(modal.querySelectorAll('[role=combobox]').length===2,'窗口保留 A/B 选择'); assert(!modal.querySelector('input[type=checkbox]'),'保存列表应留在节点内');
         assert(stage(modal).querySelectorAll('img').length===2,'窗口显示真实对比图像');
         const close=modal.querySelector('button[aria-label="关闭"]');
         document.dispatchEvent(new KeyboardEvent('keydown',{key:'Tab',shiftKey:true,bubbles:true,cancelable:true}));
-        assert(document.activeElement===modal.querySelectorAll('button')[1],'Shift+Tab 将焦点从关闭按钮移至末尾');
+        assert(document.activeElement===modal.querySelector('input[type=range]'),'Shift+Tab 将焦点从关闭按钮移至最后的缩放轴');
         document.dispatchEvent(new KeyboardEvent('keydown',{key:'Tab',bubbles:true,cancelable:true}));
         assert(document.activeElement===close,'Tab 将焦点从末尾移至关闭按钮');
         modal.querySelector('button[aria-label="关闭"]').click(); assert(!dialog(),'关闭应移除窗口'); assert(first.element.contains(button),'放大按钮恢复节点位置'); assert(document.activeElement===button,'关闭恢复焦点');
     });
     await test('窗口内选择、滑动、点击模式与关闭后的状态保留',async()=>{
         zoom(first).click(); await settle(); const modal=dialog(); assert(modal,'需要窗口');
-        const [a,b]=modal.querySelectorAll('select'); a.value='3:0'; a.dispatchEvent(new Event('change')); await settle();
+        const [a,b]=modal.querySelectorAll('[role=combobox]'); a.value='3:0'; a.dispatchEvent(new Event('change')); await settle();
         assert(first.ruyiCompareWidget.state.aKey==='3:0','A 选择改变实际节点状态');
         b.value='1:0'; b.dispatchEvent(new Event('change')); await settle(); assert(first.ruyiCompareWidget.state.bKey==='1:0','B 选择改变实际节点状态');
         const area=stage(modal),rect=area.getBoundingClientRect();
@@ -77,7 +205,7 @@ window.runCompareTests=async()=>{
     });
     await test('两个节点隔离，Escape 和遮罩关闭',async()=>{
         const previous=JSON.stringify(first.ruyiCompareWidget.state); zoom(second).click(); await settle(); const modal=dialog(); assert(modal,'第二节点打开窗口');
-        const a=modal.querySelector('select'); a.value='3:0'; a.dispatchEvent(new Event('change')); await settle(); assert(JSON.stringify(first.ruyiCompareWidget.state)===previous,'第二节点操作不能改变第一节点');
+        const a=modal.querySelector('[role=combobox]'); a.value='3:0'; a.dispatchEvent(new Event('change')); await settle(); assert(JSON.stringify(first.ruyiCompareWidget.state)===previous,'第二节点操作不能改变第一节点');
         document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true})); assert(!dialog(),'Escape 关闭');
         zoom(second).click(); const overlay=dialog().parentElement; overlay.click(); assert(!dialog(),'点击遮罩关闭');
     });

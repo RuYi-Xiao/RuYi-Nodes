@@ -396,7 +396,9 @@ export function createPromptWidget(node, inputName, app) {
     panel.addEventListener('keydown',event=>{if(!isWorkflowShortcut(event))event.stopPropagation();});panel.addEventListener('pointerdown',event=>event.stopPropagation());
     document.addEventListener('pointerdown',outside,true);document.addEventListener('keydown',key,true);window.addEventListener('resize',closePopup);window.addEventListener('scroll',scroll,true);
     const observer=new ResizeObserver(()=>{for(const editor of editors.values())paint(editor);fit();});observer.observe(panel);
-    const widget=node.addDOMWidget(inputName,'RUYI_PROMPT',panel,{hideOnZoom:false,selectOn:['focus','click'],
+    // The parameter inspector's unknown-widget fallback rewrites the shared
+    // widget width/y. Keep this full editor on the graph canvas only.
+    const widget=node.addDOMWidget(inputName,'RUYI_PROMPT',panel,{hideOnZoom:false,canvasOnly:true,selectOn:['focus','click'],
         getValue:()=>rawInvalid??JSON.stringify(state),setValue:value=>{
             try {
                 const saved=JSON.parse(value);

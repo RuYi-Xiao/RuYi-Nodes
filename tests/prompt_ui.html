@@ -1,18 +1,46 @@
 <!doctype html><html lang="zh"><meta charset="utf-8"><title>RuYi Prompt UI tests</title>
-<style>body{background:#252525;color:#eee;font:14px system-ui}.host{width:760px;margin:20px;border:1px solid #555}.h-full{height:100%}pre#results{white-space:pre-wrap}</style>
+<style>body{background:#252525;color:#eee;font:14px system-ui}.host{width:780px;margin:20px;border:1px solid #555}.h-full{height:100%}pre#results{white-space:pre-wrap}</style>
 <h2>RuYi Prompt UI</h2><pre id="results"></pre><div id="nodes"></div>
 <script type="module">
 import {app} from '/scripts/app.js';
 import '/extensions/RuYi-Nodes/ruyi_prompt.js';
+import '/extensions/RuYi-Nodes/ruyi_prompt_canvas.js';
 const result=document.querySelector('#results'), frames=()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
 function check(value,message){if(!value)throw Error(message)}
-function create(frameworkHeight=false){const host=document.createElement('div');host.className='host';document.querySelector('#nodes').append(host);
+function create(frameworkHeight=false,legacyEditor=false){const host=document.createElement('div');host.className='host';document.querySelector('#nodes').append(host);
  if(frameworkHeight)host.style.height='500px';
  const node={comfyClass:'RuYiPrompt',size:[800,500],widgets:[],properties:{},computeSize(){return [800,70+(this.widgets[0]?.computeSize?.(800)[1]||330)]},setSize(size){this.size=size;if(frameworkHeight)host.style.height=`${size[1]}px`;this.onResize?.(size)},setDirtyCanvas(){},
- addDOMWidget(name,type,panel,options){if(frameworkHeight)panel.classList.add('h-full','w-full');host.append(panel);const widget={...options,name,type};Object.defineProperty(widget,'value',{get:options.getValue,set:options.setValue});this.widgets.push(widget);return widget}};
- const {widget}=app.extensions.find(x=>x.name==='RuYi-Nodes.Prompt').getCustomWidgets().RUYI_PROMPT(node,'prompt_data');return {host,node,widget};}
+ addDOMWidget(name,type,panel,options){if(legacyEditor)delete options.canvasOnly;if(frameworkHeight)panel.classList.add('h-full','w-full');host.append(panel);const widget={...options,options,name,type,y:82,margin:10};Object.defineProperty(widget,'value',{get:options.getValue,set:options.setValue});this.widgets.push(widget);return widget}};
+ const {widget}=app.extensions.find(x=>x.name==='RuYi-Nodes.Prompt').getCustomWidgets().RUYI_PROMPT(node,'prompt_data');for(const extension of app.extensions)extension.nodeCreated?.(node);return {host,node,widget};}
 async function test(name,fn){try{await fn();result.textContent+=`PASS ${name}\n`}catch(e){result.textContent+=`FAIL ${name}: ${e.message}\n`}}
 const until=async (check,timeout=60000)=>{const end=Date.now()+timeout;while(!check()){if(Date.now()>end)throw Error('Timed out waiting for real Worker');await new Promise(r=>setTimeout(r,30));}};
+await test('Parameter inspector leaves canvas editor geometry and text intact',async()=>{
+ const {host,node,widget}=create();await frames();host.querySelector('textarea').value='blue eyes, soft light';host.querySelector('textarea').dispatchEvent(new Event('input'));
+ const original=widget.value, width=host.querySelector('textarea').clientWidth, y=widget.y;
+ // ComfyUI 1.53 WidgetLegacy renders unknown panel widgets on a small canvas,
+ // writing its width and y back to the SAME widget used by the graph overlay.
+ for(const inspectorWidth of [120,240,320]){
+  for(const item of node.widgets.filter(w=>!w.options.canvasOnly&&!w.options.hidden&&!w.options.hideInPanel)){
+   item.y=0;item.width=inspectorWidth;
+  }
+  host.style.width=`${(widget.width??node.size[0])-widget.margin*2}px`;await frames();
+  check(host.querySelector('textarea').clientWidth===width&&widget.y===y,'inspector shrinks or displaces graph editor');
+  check(widget.value===original,'inspector changes prompt text');
+ }
+});
+await test('Legacy inspector cannot narrow editor; workflow restore and node resizing retain full width',async()=>{
+ const {host,node,widget}=create(false,true);widget.value=JSON.stringify({version:1,positive:[{text:'blue eyes, soft light'}],negative:[{text:'blur'}]});await frames();const original=widget.value;
+ check(!node.widgets.some(w=>!w.options.canvasOnly&&!w.options.hidden&&!w.options.hideInPanel),'cached editor still appears in legacy inspector');
+ // The desktop may still load its cached editor without canvasOnly. Even a
+ // legacy inspector writing directly to the widget must not own canvas width.
+ for(const nodeWidth of [800,960,700]){
+  node.setSize([nodeWidth,node.size[1]]);widget.width=120;
+  host.style.width=`${(widget.width??node.size[0])-widget.margin*2}px`;await frames();
+  check(host.clientWidth===nodeWidth-20,'legacy inspector overwrites canvas width');
+  check(host.querySelector('textarea').clientWidth>nodeWidth-110,'editor collapses inside its wrapper');
+  check(widget.value===original,'layout protection changes saved prompts');
+ }
+});
 await test('ComfyUI h-full class does not cause automatic height growth',async()=>{const {node}=create(true);for(let i=0;i<8;i++)await frames();const height=node.size[1];await frames();await frames();check(height<900&&node.size[1]===height,'node height grows with framework wrapper');});
 await test('Two editable sides serialize independently and retain literal text',async()=>{const {host,widget}=create();await frames();const edits=host.querySelectorAll('textarea[data-section]');check(edits.length===2,'missing default sides');edits[0].value='1girl, blue eyes\n(light:1.2)';edits[0].dispatchEvent(new Event('input'));edits[1].value='bad hands';edits[1].dispatchEvent(new Event('input'));const value=JSON.parse(widget.value);check(value.positive[0].text==='1girl, blue eyes\n(light:1.2)','positive lost');check(value.negative[0].text==='bad hands','negative mixed');});
 await test('Search highlights matches without changing prompt and navigates',async()=>{const {host,widget}=create();await frames();const edit=host.querySelector('textarea[data-section]');edit.value='Blue eyes, blue hair';edit.dispatchEvent(new Event('input'));const search=host.querySelector('.ruyi-prompt-search');search.value='blue';search.dispatchEvent(new Event('input'));check(host.querySelectorAll('.ruyi-prompt-match').length===2,'wrong match count');host.querySelector('[data-action="next-match"]').click();check(edit.selectionStart===0&&edit.selectionEnd===4,'navigation not selected');check(JSON.parse(widget.value).positive[0].text==='Blue eyes, blue hair','search mutated text');});

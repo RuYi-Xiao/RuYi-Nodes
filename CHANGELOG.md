@@ -2,6 +2,11 @@
 
 All notable user-facing changes to **RuYi-Nodes** will be documented in this file.
 
+## 0.2.2 - 2026-10-07
+
+- Fixed Prompt editors collapsing to a narrow column when ComfyUI's parameter inspector opens. The editor stays on the graph canvas and follows the node width; a separate layout entry also applies the fix when desktop profiles retain an older cached editor. Prompt text and saved workflows are preserved.
+- 修复打开 ComfyUI 参数面板后提示词编辑器缩窄的问题：编辑器仅在画布显示，宽度跟随节点；独立布局入口兼容桌面端缓存的旧编辑器，保留提示词内容与工作流数据。
+
 ## 0.2.1 - 2026-10-06
 
 - Removed Typo.js's unused automatic dictionary file loader, including XMLHttpRequest and Node filesystem fallbacks. The worker still preloads bundled dictionaries; spelling checks and suggestions are retained. Missing dictionary text now produces an explicit error.
